@@ -1,0 +1,21 @@
+body > #sidebar.opened + #page-container {
+    left: 0px !important;
+}
+
+body > #page-container {
+    background-color: unset !important;
+    background-image: unset !important;
+}
+
+body > #sidebar {
+    display: none !important;
+}
+
+.pf {
+    box-shadow: unset !important;
+}
+
+a {
+    pointer-events: none !important;
+    cursor: default !important;
+}

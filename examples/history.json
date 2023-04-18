@@ -1,0 +1,26 @@
+[
+  {
+    "time": "2023-04-18 16:05:22.011380",
+    "query_str": "26027881",
+    "total_articles": 1,
+    "duplicated_articles": 0,
+    "valid_articles": 1,
+    "filename": "/Users/codespace/Documents/Code/ProphetDB/paper-downloader/data/file.json"
+  },
+  {
+    "time": "2023-04-18 16:16:04.348894",
+    "query_str": "26027881",
+    "total_articles": 1,
+    "duplicated_articles": 0,
+    "valid_articles": 1,
+    "filename": "/Users/codespace/Documents/Code/ProphetDB/paper-downloader/data/file.json"
+  },
+  {
+    "time": "2023-04-18 16:52:07.507173",
+    "query_str": "26027881",
+    "total_articles": 1,
+    "duplicated_articles": 0,
+    "valid_articles": 1,
+    "filename": "/Users/codespace/Documents/Code/ProphetDB/paper-downloader/data/file.json"
+  }
+]
