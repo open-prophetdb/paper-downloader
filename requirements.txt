@@ -24,3 +24,4 @@ tqdm==4.64.1
 retry==0.9.2
 retrying
 minio==7.1.14
+impact-factor==1.1.0

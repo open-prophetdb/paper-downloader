@@ -7,8 +7,10 @@ import coloredlogs
 import verboselogs
 import time
 import json
+import copy
 import hashlib
 import csv
+import yaml
 import datetime
 import subprocess
 from tqdm import tqdm
@@ -16,7 +18,6 @@ from metapub import PubMedFetcher
 from lxml import etree
 from bs4 import BeautifulSoup
 import urllib3
-from metapub import PubMedFetcher
 from retrying import retry
 
 # log config
@@ -29,7 +30,8 @@ urllib3.disable_warnings()
 
 # constants
 SCHOLARS_BASE_URL = 'https://scholar.google.com/scholar'
-HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:27.0) Gecko/20100101 Firefox/27.0'}
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:27.0) Gecko/20100101 Firefox/27.0'}
 
 verboselogs.install()
 coloredlogs.install(
@@ -63,6 +65,7 @@ logging.root.setLevel(logging.NOTSET)
 headers = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
 }
+
 
 def embed_styles(html_file):
     if os.path.exists(html_file):
@@ -99,11 +102,11 @@ def read_json(filename):
             return json.load(f)
     else:
         return []
-    
+
 
 class SciHub(object):
     """
-    SciHub class can search for papers on Google Scholars 
+    SciHub class can search for papers on Google Scholars
     and fetch/download papers from sci-hub.io
     """
 
@@ -142,7 +145,8 @@ class SciHub(object):
             raise Exception('Ran out of valid sci-hub urls')
         del self.available_base_url_list[0]
         self.base_url = self.available_base_url_list[0] + '/'
-        logger.info("I'm changing to {}".format(self.available_base_url_list[0]))
+        logger.info("I'm changing to {}".format(
+            self.available_base_url_list[0]))
 
     def search(self, query, limit=10, download=False):
         """
@@ -155,7 +159,8 @@ class SciHub(object):
 
         while True:
             try:
-                res = self.sess.get(SCHOLARS_BASE_URL, params={'q': query, 'start': start})
+                res = self.sess.get(SCHOLARS_BASE_URL, params={
+                                    'q': query, 'start': start})
             except requests.exceptions.RequestException as e:
                 results['err'] = 'Failed to complete search with query %s (connection error)' % query
                 return results
@@ -203,8 +208,9 @@ class SciHub(object):
         if not 'err' in data:
             self._save(data['pdf'],
                        os.path.join(destination, path if path else data['name']))
-
-        return data
+            return True
+        else:
+            return False
 
     def fetch(self, identifier):
         """
@@ -215,9 +221,10 @@ class SciHub(object):
 
         try:
             url = self._get_direct_url(identifier)
-            logger.info('Resolved url %s for identifier %s' % (url, identifier))
+            logger.info('Resolved url %s for identifier %s' %
+                        (url, identifier))
 
-            # verify=False is dangerous but sci-hub.io 
+            # verify=False is dangerous but sci-hub.io
             # requires intermediate certificates to verify
             # and requests doesn't know how to download them.
             # as a hacky fix, you can add them to your store
@@ -227,7 +234,7 @@ class SciHub(object):
             if res.headers['Content-Type'] != 'application/pdf':
                 self._change_base_url()
                 logger.info('Failed to fetch pdf with identifier %s '
-                                           '(resolved url %s) due to captcha' % (identifier, url))
+                            '(resolved url %s) due to captcha' % (identifier, url))
                 raise CaptchaNeedException('Failed to fetch pdf with identifier %s '
                                            '(resolved url %s) due to captcha' % (identifier, url))
                 # return {
@@ -242,12 +249,13 @@ class SciHub(object):
                 }
 
         except requests.exceptions.ConnectionError:
-            logger.info('Cannot access {}, changing url'.format(self.available_base_url_list[0]))
+            logger.info('Cannot access {}, changing url'.format(
+                self.available_base_url_list[0]))
             self._change_base_url()
 
         except requests.exceptions.RequestException as e:
             logger.info('Failed to fetch pdf with identifier %s (resolved url %s) due to request exception.'
-                       % (identifier, url))
+                        % (identifier, url))
             return {
                 'err': 'Failed to fetch pdf with identifier %s (resolved url %s) due to request exception.'
                        % (identifier, url)
@@ -308,7 +316,7 @@ class SciHub(object):
 
     def _generate_name(self, res):
         """
-        Generate unique filename for paper. Returns a name by calcuating 
+        Generate unique filename for paper. Returns a name by calcuating
         md5 hash of file contents, then appending the last 20 characters
         of the url which typically provides a good paper identifier.
         """
@@ -318,6 +326,16 @@ class SciHub(object):
         return '%s-%s' % (pdf_hash, name[-20:])
 
 
+def get_impact_factor(journal):
+    from impact_factor.core import Factor
+
+    fa = Factor()
+
+    results = fa.search(journal)
+    if len(results) == 1:
+        return (results[0].get("factor"), results[0].get("journal"))
+    else:
+        return ("Unknown", "Unknown")
 
 class PubMed(PubMedFetcher):
     """Get articles from pubmed.
@@ -329,12 +347,14 @@ class PubMed(PubMedFetcher):
         pubmed.fetch_save_metadata()
     """
 
-    def __init__(self, method='eutils', cachedir='.cache', delay=1, dest_file="."):
+    def __init__(self, method='eutils', cachedir='.cache', delay=1, dest_file=".", get_impact_factor_fn=None):
         self.counts = 0
         self.delay = delay
         self.pmids = []
+        self.author = 'Anonymous'
         self.metadata = []
         self.dest_file = dest_file
+        self.get_impact_factor_fn = get_impact_factor_fn
 
         if os.path.exists(dest_file):
             raise Exception(
@@ -345,10 +365,10 @@ class PubMed(PubMedFetcher):
     def _count(self, query_str):
         result = self.qs.esearch({'db': 'pubmed', 'term': query_str,
                                   'rettype': 'count', 'retmax': 250,
-                                 'retstart': 0})
+                                  'retstart': 0})
         return (int(etree.fromstring(result).find('Count').text.strip()))
 
-    def batch_query_pmids(self, query_str):
+    def batch_query_pmids(self, query_str, author='Anonymous'):
         logger.info("Fetch the metadata with query_str (%s)..." % query_str)
         pmids = []
         self.counts = self._count(query_str)
@@ -358,6 +378,7 @@ class PubMed(PubMedFetcher):
             logger.info("Fetch the first %s articles" % len(r))
             pmids.extend(r)
         self.pmids = pmids
+        self.author = author
         logger.info("Get %s papers" % len(pmids))
 
     def remove_dup_pmids(self, files):
@@ -379,25 +400,36 @@ class PubMed(PubMedFetcher):
     def fetch_save_metadata(self):
         logger.info("Fetch the metadata for articles...")
         pbar = tqdm(self.pmids)
-        year = datetime.datetime.now().year
+
         for pmid in pbar:
-            paper = {}
-            article = self.article_by_pmid(pmid)
-            paper["pmid"] = int(pmid)
-            paper["pmcid"] = article.pmc if article.pmc else ''
-            paper["pmc_link"] = 'https://www.ncbi.nlm.nih.gov/pmc/articles/' + \
-                article.pmc if article.pmc else ''
-            paper["pubmed_link"] = 'https://pubmed.ncbi.nlm.nih.gov/' + pmid
-            paper["abstract"] = article.abstract.replace(
-                "\n", " ") if article.abstract is not None else ''
-            paper["title"] = article.title
-            paper["authors"] = ', '.join(article.authors)
-            paper["journal"] = article.journal
-            paper["publication"] = article.year
-            paper["publication_link"] = 'https://publications.3steps.cn/%s/html/%s.html' % (year, pmid)
-            paper["doi"] = article.doi if article.doi else ''
-            paper["doi_link"] = 'https://doi.org/' + paper["doi"]
-            self.metadata.append(paper)
+            try:
+                paper = {}
+                article = self.article_by_pmid(pmid)
+                paper['tag'] = self.author
+                paper["pmid"] = int(pmid)
+                paper["pmcid"] = article.pmc if article.pmc else ''
+                paper["pmc_link"] = 'https://www.ncbi.nlm.nih.gov/pmc/articles/' + \
+                    article.pmc if article.pmc else ''
+                paper["pubmed_link"] = 'https://pubmed.ncbi.nlm.nih.gov/' + pmid
+                paper["abstract"] = article.abstract.replace(
+                    "\n", " ") if article.abstract is not None else ''
+                paper["title"] = article.title
+                paper["imported_date"] = datetime.now().strftime("%Y-%m-%d")
+                paper["authors"] = ', '.join(article.authors)
+                paper["journal_abbr"] = article.journal
+                paper["journal"] = ""
+                paper["impact_factor"] = ""
+                paper["publication"] = article.year
+                paper["doi"] = article.doi if article.doi else ''
+                paper["doi_link"] = 'https://doi.org/' + paper["doi"]
+
+                if self.get_impact_factor_fn:
+                    paper["impact_factor"], paper["journal"] = self.get_impact_factor_fn(article.journal)
+
+                self.metadata.append(paper)
+            except Exception as e:
+                logger.error("Fetch metadata for %s error, reason: %s" %
+                             (pmid, e))
 
             pbar.set_description("Processing %s" % pmid)
 
@@ -437,9 +469,13 @@ def pdf_to_html(dest_dir, pdf_file):
         command = f"docker run --rm -v {pdf_dir}:{pdf_dir} -v {dest_dir}:{dest_dir} -it bwits/pdf2htmlex:latest pdf2htmlEX --zoom 1.5 {pdf_file} --dest-dir {dest_dir}"
         output = subprocess.call(command, shell=True)
         if output == 0:
+            html_filename = os.path.basename(pdf_file).replace(".pdf", ".html")
+            html_file = os.path.join(dest_dir, html_filename)
+            embed_styles(html_file)
             return True
         else:
             return False
+
 
 def download_pmc(pmcid, filepath):
     url = 'https://www.ncbi.nlm.nih.gov/pmc/articles/' + \
@@ -451,19 +487,22 @@ def download_pmc(pmcid, filepath):
         logger.info("Find pdf links: %s" % pdf_links)
         if pdf_links:
             pdf_links = [pdf_link.get('href') for pdf_link in pdf_links]
-            pdf_link = set(pdf_links)[0]
+            pdf_link = list(set(pdf_links))[0]
             pdf_link = 'https://www.ncbi.nlm.nih.gov' + pdf_link
             pdf = requests.get(pdf_link, headers=headers)
             if pdf.status_code == 200:
                 with open(filepath, 'wb') as f:
                     f.write(pdf.content)
                     logger.info("Download %s succssfully." % filepath)
+                return True
             else:
                 logger.warning(
                     "Download %s failed, status code is %s." % (url, pdf.status_code))
+                return False
     else:
         logger.warning(
             "Download %s failed, status code is %s." % (url, html.status_code))
+        return False
 
 
 @click.group()
@@ -480,40 +519,59 @@ def pubmed():
               type=click.Path(exists=True, file_okay=True, dir_okay=False),
               help="Where is the config file.")
 def fetch_metadata(output_file, config, delay):
+    if os.path.exists(output_file):
+        raise Exception("""
+%s exists. if you want to update the metadata, please delete it first or rename it.
+""" % output_file)
+    
+    if not os.path.exists(os.path.dirname(output_file)):
+        os.makedirs(os.path.dirname(output_file))
+
     with open(os.path.abspath(config), 'r') as f:
-        c = json.load(f)
-        query_str = c.get('query_str')
+        if config.endswith(".json"):
+            c = json.load(f)
+        elif config.endswith(".yaml"):
+            c = yaml.load(f, Loader=yaml.FullLoader)
+        else:
+            raise Exception("Please check your config file.")
+
+        query_str = str(c.get('query_str'))
+        author = c.get('author')
+
+        if not query_str:
+            logger.warning("Please check your config file.")
+            raise Exception(
+                "Please check your config file, It don't contain query_str.")
+
         formated_query_str = query_str.replace("'", "\"")
         output_file = os.path.abspath(output_file)
-        if os.path.exists(output_file):
-            logger.warning(
-                "%s exists, please delete it firstly and retry." % output_file)
-        else:
-            output_dir = os.path.dirname(output_file)
-            files = [os.path.join(output_dir, i)
-                     for i in os.listdir(output_dir) if i.endswith(".json")]
-            pubmed = PubMed(dest_file=output_file,
-                            delay=delay)
-            pubmed.batch_query_pmids(formated_query_str)
-            pubmed.remove_dup_pmids(files)
-            pubmed.fetch_save_metadata()
 
-            if pubmed.counts > 0:
-                dirname = os.path.dirname(config)
-                history_file = os.path.join(dirname, 'history.json')
-                history = read_json(history_file) or []
-                history_item = {
-                    "time": str(datetime.datetime.now()),
-                    "query_str": query_str,
-                    "total_articles": pubmed.counts,
-                    "duplicated_articles": pubmed.counts - len(pubmed.pmids),
-                    "valid_articles": len(pubmed.pmids),
-                    "filename": output_file
-                }
-                history.append(history_item)
-                logger.info("Fetch articles succssfully (%s)." %
-                               history_item)
-                write_json(history, history_file)
+        output_dir = os.path.dirname(output_file)
+        files = [os.path.join(output_dir, i)
+                 for i in os.listdir(output_dir) if os.path.isfile(i) and i.endswith(".json")]
+        pubmed = PubMed(dest_file=output_file,
+                        delay=delay, get_impact_factor_fn=get_impact_factor)
+        pubmed.batch_query_pmids(
+            formated_query_str, author if author else 'Anonymous')
+        pubmed.remove_dup_pmids(files)
+        pubmed.fetch_save_metadata()
+
+        if pubmed.counts > 0:
+            dirname = os.path.dirname(config)
+            history_file = os.path.join(dirname, 'history.json')
+            history = read_json(history_file) or []
+            history_item = {
+                "time": str(datetime.datetime.now()),
+                "query_str": query_str,
+                "total_articles": pubmed.counts,
+                "duplicated_articles": pubmed.counts - len(pubmed.pmids),
+                "valid_articles": len(pubmed.pmids),
+                "filename": output_file
+            }
+            history.append(history_item)
+            logger.info("Fetch articles succssfully (%s)." %
+                        history_item)
+            write_json(history, history_file)
 
 
 @pubmed.command(help="Fetch the full text for articles.")
@@ -535,31 +593,47 @@ def fetch_pdf(metadata_file, output_dir):
         logger.warning("Cannot find the metadata file.")
         raise Exception("Cannot find the metadata file.")
 
+    copied_metadata = copy.deepcopy(metadata)
     for i in metadata:
         pmcid = i.get('pmcid')
         pmid = i.get('pmid')
         scihub = i.get('doi')
 
-        if os.path.exists(os.path.join(output_dir, str(pmid) + '.pdf')):
+        pdf_filepath = os.path.join(output_dir, str(pmid) + '.pdf')
+        if os.path.exists(pdf_filepath):
             logger.info("%s.pdf exists in %s, skip it." % (pmid, output_dir))
             continue
 
         if pmcid:
             logger.info("Download %s from PMC." % pmid)
-            download_pmc(pmcid, os.path.join(output_dir, str(pmid) + '.pdf'))
+            status = download_pmc(pmcid, pdf_filepath)
             logger.info("\n\n")
         elif scihub:
             logger.info("Download %s from scihub." % pmid)
             sh = SciHub()
-            sh.download(scihub, destination=output_dir, path=str(pmid) + '.pdf')
+            status = sh.download(scihub, destination=output_dir,
+                                 path=str(pmid) + '.pdf')
         else:
             logger.info("Cannot find the full text for %s" % pmid)
-            
+            status = False
+
+        if status:
+            article_metadata = filter(
+                lambda x: x.get('pmid') == pmid, copied_metadata)
+            logger.info("Download %s succssfully." % pmid)
+            pdf_to_html(os.path.join(output_dir, pdf_filepath))
+            for j in article_metadata:
+                year = datetime.datetime.now().year
+                j["pdf"] = 'https://publications.3steps.cn/%s/pdf/%s.pdf' % (year, pmid)
+            with open(metadata_file, 'w') as f:
+                json.dump(copied_metadata, f)
+
+
 @pubmed.command(help="Convert pdf to html.")
 @click.option('--pdf-dir', '-p', required=True,
-                help="The directory which saved the pdf.")
+              help="The directory which saved the pdf.")
 @click.option('--html-dir', '-h', required=True,
-                help="The directory which saved the html.")
+              help="The directory which saved the html.")
 def pdf2html(pdf_dir, html_dir):
     pdf_dir = os.path.abspath(pdf_dir)
     html_dir = os.path.abspath(html_dir)
@@ -568,14 +642,19 @@ def pdf2html(pdf_dir, html_dir):
     pdfs = [os.path.join(pdf_dir, i)
             for i in os.listdir(pdf_dir) if i.endswith(".pdf")]
     for pdf in pdfs:
+        logger.info("Convert pdf (%s) to html." % pdf)
         html_filename = os.path.basename(pdf).replace(".pdf", ".html")
         html_file = os.path.join(html_dir, html_filename)
         if os.path.exists(html_file):
             logger.info("Skip %s" % pdf)
             continue
 
-        if pdf_to_html(html_dir, pdf):
-            embed_styles(html_file)
+        try:
+            pdf_to_html(html_dir, pdf)
+        except Exception as e:
+            logger.error(e)
+            logger.error("Convert %s failed." % pdf)
+            continue
 
 
 main = click.CommandCollection(sources=[pubmed])
