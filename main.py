@@ -618,15 +618,25 @@ def fetch_pdf(metadata_file, output_dir):
             status = False
 
         if status:
-            article_metadata = filter(
-                lambda x: x.get('pmid') == pmid, copied_metadata)
             logger.info("Download %s succssfully." % pmid)
-            pdf_to_html(os.path.join(output_dir, pdf_filepath))
-            for j in article_metadata:
-                year = datetime.datetime.now().year
-                j["pdf"] = 'https://publications.3steps.cn/%s/pdf/%s.pdf' % (year, pmid)
-            with open(metadata_file, 'w') as f:
-                json.dump(copied_metadata, f)
+            try:
+                html_is_generated = pdf_to_html(os.path.join(output_dir, pdf_filepath))
+            except Exception as e:
+                logger.warning("Cannot convert %s.pdf to html." % pmid)
+                html_is_generated = False
+
+        article_metadata = filter(
+            lambda x: x.get('pmid') == pmid, copied_metadata)
+
+        for j in article_metadata:
+            year = datetime.datetime.now().year
+            j["pdf"] = 'https://publications.3steps.cn/%s/pdf/%s.pdf' % (year, pmid)
+
+            if html_is_generated:
+                j["html"] = 's3://%s/html/%s.html' % (year, pmid)
+                
+        with open(metadata_file, 'w') as f:
+            json.dump(copied_metadata, f)
 
 
 @pubmed.command(help="Convert pdf to html.")

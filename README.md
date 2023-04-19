@@ -45,11 +45,15 @@ python main.py pdf2html -p ./pdf -h ./html
 ```
 # `html` is a variable that contains the path to the html file, you need to keep it same with your labeling interface settings.
 # Label studio will automatically fetch the html file from the miniocloud
-{
-    "data": {
-        "html": "s3://<bucket_name>/<path_to_the_html_file>"
+[
+    {
+        "html": "s3://<bucket_name>/<path_to_the_html_file>",
+        "pdf": "<embed src='https://<bucket_name>.minio.<region>.miniocloud.com/<path_to_the_pdf_file>' width='100%' height='100%' type='application/pdf'>"
     }
-}
+]
+
+# NOTE:
+# If you want to show the pdf file on Chrome, it may complain about the sandboxing. I've no idea how to fix it. But it works on Firefox.
 ```
 
 ## How to prepare your data
@@ -58,7 +62,12 @@ python main.py pdf2html -p ./pdf -h ./html
     ```yaml
     query_str: "your query string"
     author: "your name"
+    download_pdf: true
     ```
+    > NOTE:
+    > 1. The `query_str` field is used to query pubmed for the papers you want to label
+    > 2. The `author` field is used to identify who is labeling the papers
+    > 3. The `download_pdf` field is used to indicate whether the pipeline should download the pdf files of the papers automatically. If you set it to `true`, the pipeline will download the pdf files of the papers automatically. If you set it to `false`, the pipeline will not download the pdf files of the papers automatically. You can download the pdf files manually by `paper-downloader` tool. After downloading all pdfs of the papers, you need to reimport the metadata file to the label studio. The metadata file will be stored in the `<year>/metadata/<project_name>` folder. The pdf files will be stored in the `<year>/pdf` folder. [NOTE: Not all the papers have pdf files, if you see a paper that doesn't have a pdf file on label studio, it means the pipeline couldn't download the pdf file of the paper automatically. You can download the pdf file manually and upload it to the pdf folder]
 3. To upload the yaml file to the `config/<project_name>` folder
 4. Wait a few minutes for the pipeline to fetch the papers and generate the metadata file for the papers. The metadata file will be stored in the `metadata/<project_name>` folder
 5. If you see a notification in the dingtalk group, it means the pipeline has finished fetching the metadata of papers. After that, the system administrator will also get the notification and upload the metadata file to the label studio and download all the pdf files of the papers. The pdf files will be stored in the `pdf/<project_name>` folder. [NOTE: Not all the papers have pdf files, if you see a paper that doesn't have a pdf file on label studio, it means the pipeline couldn't download the pdf file of the paper automatically. You can download the pdf file manually and upload it to the pdf folder]
