@@ -24,11 +24,11 @@ fh.setFormatter(formatter)
 # add console handler to logger
 logger.addHandler(fh)
 
-root_dir = "/data/prophetdb/prophetdb-studio/data/publications"
-config_dir = "/data/prophetdb/prophetdb-studio/data/publications/config"
-metadata_dir = "/data/prophetdb/prophetdb-studio/data/publications/metadata"
-html_dir = "/data/prophetdb/prophetdb-studio/data/publications/html"
-pdf_dir = "/data/prophetdb/prophetdb-studio/data/publications/pdf"
+root_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications"
+config_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications/config"
+metadata_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications/metadata"
+html_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications/html"
+pdf_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications/pdf"
 python_bin = "/data/prophetdb/prophetdb-studio/paper-downloader/.venv/bin/python"
 script = "/data/prophetdb/prophetdb-studio/paper-downloader/main.py"
 
@@ -63,7 +63,12 @@ def handle_configfile_event(filepath):
             elif filepath.endswith("yaml"):
                 data = yaml.load(f, Loader=yaml.FullLoader)
             else:
-                return None
+                if filepath.endswith(".log"):
+                    return None
+                else:
+                    logger.error("The file is not an expected config file")
+                    send_notification("收到新的检索式，但是文件格式不正确。请检查文件格式是否为json或yaml。")
+                    return None
 
         author = data.get("author")
         download_pdf = data.get("download_pdf")
