@@ -11,7 +11,7 @@ import copy
 import hashlib
 import csv
 import yaml
-import datetime
+from datetime import datetime
 import subprocess
 from tqdm import tqdm
 from metapub import PubMedFetcher
@@ -335,7 +335,8 @@ def get_impact_factor(journal):
     if len(results) == 1:
         return (results[0].get("factor"), results[0].get("journal"))
     else:
-        return ("Unknown", "Unknown")
+        return (-1, "Unknown")
+
 
 class PubMed(PubMedFetcher):
     """Get articles from pubmed.
@@ -354,6 +355,7 @@ class PubMed(PubMedFetcher):
         self.author = 'Anonymous'
         self.metadata = []
         self.dest_file = dest_file
+        self.duplicated_papers = []
         self.get_impact_factor_fn = get_impact_factor_fn
 
         if os.path.exists(dest_file):
@@ -390,10 +392,16 @@ class PubMed(PubMedFetcher):
                     pmids = [str(article.get("pmid"))
                              for article in articles if article.get("pmid")]
                     total = len(self.pmids)
+                    
+                    duplicated_papers = [article for article in articles
+                         if article.get("pmid") in self.pmids]
+                    self.duplicated_papers.extend(duplicated_papers)
+
                     self.pmids = [
                         pmid for pmid in self.pmids if pmid not in pmids]
                     logger.info("Find %s duplicated pmids and %s unique pmids" %
                                 ((total - len(self.pmids)), len(self.pmids)))
+
             except Exception as e:
                 logger.error("Load %s error, reason: %s" % (file, e))
 
@@ -417,14 +425,17 @@ class PubMed(PubMedFetcher):
                 paper["imported_date"] = datetime.now().strftime("%Y-%m-%d")
                 paper["authors"] = ', '.join(article.authors)
                 paper["journal_abbr"] = article.journal
-                paper["journal"] = ""
-                paper["impact_factor"] = ""
+                paper["journal"] = "Unknown"
+                paper["pdf"] = ""
+                paper["html"] = ""
+                paper["impact_factor"] = -1
                 paper["publication"] = article.year
                 paper["doi"] = article.doi if article.doi else ''
                 paper["doi_link"] = 'https://doi.org/' + paper["doi"]
 
                 if self.get_impact_factor_fn:
-                    paper["impact_factor"], paper["journal"] = self.get_impact_factor_fn(article.journal)
+                    paper["impact_factor"], paper["journal"] = self.get_impact_factor_fn(
+                        article.journal)
 
                 self.metadata.append(paper)
             except Exception as e:
@@ -439,6 +450,13 @@ class PubMed(PubMedFetcher):
             write_json(self.metadata, self.dest_file)
         else:
             logger.warning("Cannot find any new articles.")
+
+        if self.duplicated_papers:
+            logger.info("Find %s duplicated articles." %
+                        len(self.duplicated_papers))
+            fileprefix, _ = os.path.splitext(self.dest_file)
+            filepath = os.join.path(fileprefix, "_duplicated.json")
+            write_json(self.duplicated_papers, filepath)
 
 # paper_metadata
 # {
@@ -523,7 +541,7 @@ def fetch_metadata(output_file, config, delay):
         raise Exception("""
 %s exists. if you want to update the metadata, please delete it first or rename it.
 """ % output_file)
-    
+
     if not os.path.exists(os.path.dirname(output_file)):
         os.makedirs(os.path.dirname(output_file))
 
@@ -561,7 +579,7 @@ def fetch_metadata(output_file, config, delay):
             history_file = os.path.join(dirname, 'history.json')
             history = read_json(history_file) or []
             history_item = {
-                "time": str(datetime.datetime.now()),
+                "time": str(datetime.now()),
                 "query_str": query_str,
                 "total_articles": pubmed.counts,
                 "duplicated_articles": pubmed.counts - len(pubmed.pmids),
@@ -572,6 +590,22 @@ def fetch_metadata(output_file, config, delay):
             logger.info("Fetch articles succssfully (%s)." %
                         history_item)
             write_json(history, history_file)
+
+
+def update_metadata(pmid, metadata, metadata_file, pdf_filepath, html_filepath):
+    article_metadata = filter(
+        lambda x: x.get('pmid') == pmid, metadata)
+
+    for j in article_metadata:
+        if os.path.isfile(pdf_filepath):
+            pdf_url = 'https://publications.3steps.cn/pdf/%s.pdf' % pmid
+            j["pdf"] = f"<embed src='{pdf_url}' width='100%' height='600px' type='application/pdf'>"
+
+        if os.path.isfile(html_filepath):
+            j["html"] = 's3://html/%s.html' % pmid
+
+    with open(metadata_file, 'w') as f:
+        json.dump(metadata, f)
 
 
 @pubmed.command(help="Fetch the full text for articles.")
@@ -588,6 +622,7 @@ def fetch_pdf(metadata_file, output_dir):
     output_dir = os.path.abspath(output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+
     metadata = read_json(metadata_file)
     if metadata is None:
         logger.warning("Cannot find the metadata file.")
@@ -600,43 +635,39 @@ def fetch_pdf(metadata_file, output_dir):
         scihub = i.get('doi')
 
         pdf_filepath = os.path.join(output_dir, str(pmid) + '.pdf')
+        html_filepath = pdf_filepath.replace('pdf', 'html')
         if os.path.exists(pdf_filepath):
             logger.info("%s.pdf exists in %s, skip it." % (pmid, output_dir))
+
+            if not os.path.exists(html_filepath):
+                try:
+                    pdf_to_html(os.path.join(output_dir, pdf_filepath))
+                except Exception as e:
+                    logger.warning("Cannot convert %s.pdf to html." % pmid)
+
+            update_metadata(pmid, copied_metadata, metadata_file,
+                            pdf_filepath, html_filepath)
             continue
 
         if pmcid:
             logger.info("Download %s from PMC." % pmid)
-            status = download_pmc(pmcid, pdf_filepath)
+            download_pmc(pmcid, pdf_filepath)
             logger.info("\n\n")
         elif scihub:
             logger.info("Download %s from scihub." % pmid)
             sh = SciHub()
-            status = sh.download(scihub, destination=output_dir,
-                                 path=str(pmid) + '.pdf')
+            sh.download(scihub, destination=output_dir,
+                        path=str(pmid) + '.pdf')
         else:
             logger.info("Cannot find the full text for %s" % pmid)
-            status = False
 
-        if status:
-            logger.info("Download %s succssfully." % pmid)
-            try:
-                html_is_generated = pdf_to_html(os.path.join(output_dir, pdf_filepath))
-            except Exception as e:
-                logger.warning("Cannot convert %s.pdf to html." % pmid)
-                html_is_generated = False
+        try:
+            pdf_to_html(os.path.join(output_dir, pdf_filepath))
+        except Exception as e:
+            logger.warning("Cannot convert %s.pdf to html." % pmid)
 
-        article_metadata = filter(
-            lambda x: x.get('pmid') == pmid, copied_metadata)
-
-        for j in article_metadata:
-            year = datetime.datetime.now().year
-            j["pdf"] = 'https://publications.3steps.cn/%s/pdf/%s.pdf' % (year, pmid)
-
-            if html_is_generated:
-                j["html"] = 's3://%s/html/%s.html' % (year, pmid)
-                
-        with open(metadata_file, 'w') as f:
-            json.dump(copied_metadata, f)
+        update_metadata(pmid, copied_metadata, metadata_file,
+                        pdf_filepath, html_filepath)
 
 
 @pubmed.command(help="Convert pdf to html.")

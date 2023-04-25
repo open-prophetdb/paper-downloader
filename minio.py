@@ -7,6 +7,7 @@ import subprocess
 from watchdog.observers import Observer
 from watchdog.events import *
 import time
+from datetime import datetime
 import logging
 
 # log config
@@ -23,10 +24,11 @@ fh.setFormatter(formatter)
 # add console handler to logger
 logger.addHandler(fh)
 
-config_dir = "/data/prophetdb/prophetdb-studio/data/publications/2023/config/"
-metadata_dir = "/data/prophetdb/prophetdb-studio/data/publications/2023/metadata"
-html_dir = "/data/prophetdb/prophetdb-studio/data/publications/2023/html"
-pdf_dir = "/data/prophetdb/prophetdb-studio/data/publications/2023/pdf"
+root_dir = "/data/prophetdb/prophetdb-studio/data/publications"
+config_dir = "/data/prophetdb/prophetdb-studio/data/publications/config"
+metadata_dir = "/data/prophetdb/prophetdb-studio/data/publications/metadata"
+html_dir = "/data/prophetdb/prophetdb-studio/data/publications/html"
+pdf_dir = "/data/prophetdb/prophetdb-studio/data/publications/pdf"
 python_bin = "/data/prophetdb/prophetdb-studio/paper-downloader/.venv/bin/python"
 script = "/data/prophetdb/prophetdb-studio/paper-downloader/main.py"
 
@@ -76,13 +78,21 @@ def handle_configfile_event(filepath):
         if not author:
             author = "匿名用户"
 
+        if os.path.exists(dest_file):
+            relative_dir = os.path.relpath(dest_dir, metadata_dir)
+            minio_dir = os.path.join("metadata", relative_dir)
+            filename = os.path.basename(dest_file)
+            msg = f"{author}上传了新的检索式，但系统检测到在{minio_dir}目录已有相同的Metadata文件{filename}, 请前往publications.3steps.cn删除Metadata文件，并重试。"
+            send_notification(msg)
+            return None
+
         try:
             output = subprocess.check_output(cmd, shell=True)
             if download_pdf:
                 msg = f"{author}上传了新的检索式，系统已获取到新的文献元数据。正在下载文献PDF，请稍后。"
                 send_notification(msg)
                 download_pdfs_output = download_pdfs(dest_file)
-                output = output + "\n\n" + download_pdfs_output
+                output = output.decode("utf-8") + "\n\n" + download_pdfs_output
 
                 msg = f"系统已处理完毕{author}上传的新的检索式。请前往publications.3steps.cn下载Metadata，并导入至Prophet Studio。"
             else:
@@ -110,7 +120,7 @@ def download_pdfs(metadata_json_file):
         output = subprocess.check_output(cmd, shell=True)
         msg = f"系统已下载完所有文献PDF。请前往Prophet Studio查看。"
         send_notification(msg)
-        return output
+        return output.decode("utf-8")
     except Exception as e:
         msg = f"系统处理时出现了错误。请管理员前往Prophet Server查看错误信息。以下是错误信息：\n{e}"
         send_notification(msg)
@@ -146,10 +156,10 @@ class FileEventHandler(FileSystemEventHandler):
                 logger.info("directory created:{0}".format(event.src_path))
             else:
                 logger.info("file created:{0}".format(event.src_path))
-                if event.src_path.startswith("/data/prophetdb/prophetdb-studio/data/publications/2023/pdf"):
+                if event.src_path.startswith(pdf_dir):
                     handle_pdf_event(event.src_path)
 
-                if event.src_path.startswith("/data/prophetdb/prophetdb-studio/data/publications/2023/config"):
+                if event.src_path.startswith(config_dir):
                     handle_configfile_event(event.src_path)
         except Exception as e:
             logger.error(e)
@@ -170,8 +180,7 @@ class FileEventHandler(FileSystemEventHandler):
 def main():
     observer = Observer()
     event_handler = FileEventHandler()
-    observer.schedule(
-        event_handler, "/data/prophetdb/prophetdb-studio/data/publications/2023", True)
+    observer.schedule(event_handler, root_dir, True)
     observer.start()
     try:
         while True:
