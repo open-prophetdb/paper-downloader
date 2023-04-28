@@ -3,8 +3,6 @@ import re
 import click
 import requests
 import logging
-import coloredlogs
-import verboselogs
 import time
 import json
 import copy
@@ -18,12 +16,25 @@ from metapub import PubMedFetcher
 from lxml import etree
 from bs4 import BeautifulSoup
 import urllib3
+import bibtexparser
 from retrying import retry
 
 # log config
-logging.basicConfig()
-logger = logging.getLogger('Sci-Hub')
+# create logger
+logger = logging.getLogger('paper-downloader')
 logger.setLevel(logging.DEBUG)
+
+if os.path.exists('/var/log'):
+    # create console handler and set level to debug
+    fh = logging.FileHandler('/var/log/paper-downloader.log')
+    fh.setLevel(logging.DEBUG)
+    # create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # add formatter to console handler
+    fh.setFormatter(formatter)
+    # add console handler to logger
+    logger.addHandler(fh)
 
 #
 urllib3.disable_warnings()
@@ -32,12 +43,6 @@ urllib3.disable_warnings()
 SCHOLARS_BASE_URL = 'https://scholar.google.com/scholar'
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:27.0) Gecko/20100101 Firefox/27.0'}
-
-verboselogs.install()
-coloredlogs.install(
-    fmt='%(asctime)s - %(module)s:%(lineno)d - %(levelname)s - %(message)s')
-logger = logging.getLogger('root')
-logging.root.setLevel(logging.NOTSET)
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
@@ -54,17 +59,6 @@ def read_css_file(file):
     css_path = os.path.join(os.path.dirname(__file__), 'css', file)
     with open(css_path, 'r') as css_file:
         return css_file.read()
-
-
-verboselogs.install()
-coloredlogs.install(
-    fmt='%(asctime)s - %(module)s:%(lineno)d - %(levelname)s - %(message)s')
-logger = logging.getLogger('root')
-logging.root.setLevel(logging.NOTSET)
-
-headers = {
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
-}
 
 
 def embed_styles(html_file):
@@ -384,7 +378,7 @@ class PubMed(PubMedFetcher):
         logger.info("Get %s papers" % len(pmids))
 
     def remove_dup_pmids(self, files):
-        logger.info("Remove the duplicated articles...")
+        logger.info("Remove the duplicated articles by %s..." % files)
         for file in files:
             try:
                 articles = read_json(file)
@@ -392,10 +386,12 @@ class PubMed(PubMedFetcher):
                     pmids = [str(article.get("pmid"))
                              for article in articles if article.get("pmid")]
                     total = len(self.pmids)
-                    
+
                     duplicated_papers = [article for article in articles
-                         if article.get("pmid") in self.pmids]
+                                         if str(article.get("pmid")) in self.pmids]
                     self.duplicated_papers.extend(duplicated_papers)
+                    logger.info("Find %s duplicated papers" %
+                                len(duplicated_papers))
 
                     self.pmids = [
                         pmid for pmid in self.pmids if pmid not in pmids]
@@ -449,13 +445,14 @@ class PubMed(PubMedFetcher):
             logger.info("Find %s new articles." % len(self.metadata))
             write_json(self.metadata, self.dest_file)
         else:
+            write_json([], self.dest_file)
             logger.warning("Cannot find any new articles.")
 
         if self.duplicated_papers:
             logger.info("Find %s duplicated articles." %
                         len(self.duplicated_papers))
             fileprefix, _ = os.path.splitext(self.dest_file)
-            filepath = os.join.path(fileprefix, "_duplicated.json")
+            filepath = fileprefix + "_duplicated.json"
             write_json(self.duplicated_papers, filepath)
 
 # paper_metadata
@@ -566,7 +563,7 @@ def fetch_metadata(output_file, config, delay):
 
         output_dir = os.path.dirname(output_file)
         files = [os.path.join(output_dir, i)
-                 for i in os.listdir(output_dir) if os.path.isfile(i) and i.endswith(".json")]
+                 for i in os.listdir(output_dir) if i.endswith(".json")]
         pubmed = PubMed(dest_file=output_file,
                         delay=delay, get_impact_factor_fn=get_impact_factor)
         pubmed.batch_query_pmids(
@@ -598,11 +595,11 @@ def update_metadata(pmid, metadata, metadata_file, pdf_filepath, html_filepath):
 
     for j in article_metadata:
         if os.path.isfile(pdf_filepath):
-            pdf_url = 'https://publications.3steps.cn/pdf/%s.pdf' % pmid
+            pdf_url = 'https://publications.3steps.cn/publications/pdf/%s.pdf' % pmid
             j["pdf"] = f"<embed src='{pdf_url}' width='100%' height='600px' type='application/pdf'>"
 
         if os.path.isfile(html_filepath):
-            j["html"] = 's3://html/%s.html' % pmid
+            j["html"] = 's3://publications/html/%s.html' % pmid
 
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f)
@@ -641,9 +638,9 @@ def fetch_pdf(metadata_file, output_dir):
 
             if not os.path.exists(html_filepath):
                 try:
-                    pdf_to_html(os.path.join(output_dir, pdf_filepath))
+                    pdf_to_html(os.path.dirname(html_filepath), os.path.join(output_dir, pdf_filepath))
                 except Exception as e:
-                    logger.warning("Cannot convert %s.pdf to html." % pmid)
+                    logger.warning("Cannot convert %s.pdf to html. Please check the following messages: %s" % (pmid, e))
 
             update_metadata(pmid, copied_metadata, metadata_file,
                             pdf_filepath, html_filepath)
@@ -662,7 +659,7 @@ def fetch_pdf(metadata_file, output_dir):
             logger.info("Cannot find the full text for %s" % pmid)
 
         try:
-            pdf_to_html(os.path.join(output_dir, pdf_filepath))
+            pdf_to_html(os.path.dirname(html_filepath), os.path.join(output_dir, pdf_filepath))
         except Exception as e:
             logger.warning("Cannot convert %s.pdf to html." % pmid)
 
@@ -696,6 +693,38 @@ def pdf2html(pdf_dir, html_dir):
             logger.error(e)
             logger.error("Convert %s failed." % pdf)
             continue
+
+
+@pubmed.command(help="Convert bib file to a paper-downloader input file.")
+@click.option('--bib-file', '-b', required=True,
+              help="A path of bib file.")
+@click.option('--output-file', '-o', required=True,
+              help="An output file.")
+def bib2pd(bib_file, output_file):
+    if not os.path.exists(bib_file):
+        raise Exception("Cannot find the bib file.")
+    bib_file = os.path.abspath(bib_file)
+
+    try:
+        with open(bib_file, 'r') as bibtex_file:
+            bib_database = bibtexparser.load(bibtex_file)
+            articles = bib_database.entries
+            pmids = []
+            for article in articles:
+                pmid = article.get('pmid')
+                if pmid:
+                    pmids.append(pmid)
+
+            query_str = " OR ".join(pmids)
+            download_pdf = True
+            output = {
+                "query_str": query_str,
+                "download_pdf": download_pdf
+            }
+
+            write_json(output, output_file)
+    except Exception as e:
+        raise Exception("Cannot load the bib file.")
 
 
 main = click.CommandCollection(sources=[pubmed])
