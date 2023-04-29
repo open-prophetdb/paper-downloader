@@ -715,6 +715,12 @@ def bib2pd(bib_file, output_file):
                 if pmid:
                     pmids.append(pmid)
 
+                url = article.get('url')
+                if url:
+                    if 'pubmed' in url:
+                        pmid = url.split('/')[-1]
+                        pmids.append(pmid)
+
             query_str = " OR ".join(pmids)
             download_pdf = True
             output = {
