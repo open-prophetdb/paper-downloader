@@ -76,3 +76,160 @@ python main.py pdf2html -p ./pdf -h ./html
 4. Wait a few minutes for the pipeline to fetch the papers and generate the metadata file for the papers. The metadata file will be stored in the `metadata/<project_name>` folder. If you want to check the progress of the pipeline, you can check the dingtalk group. But if you enable the `download_pdf` field, the pipeline will take a long time to download the pdf files of the papers. So you can check the progress of the pipeline by checking the `pdf/<project_name>` folder. The pipeline will download the pdf files of the papers one by one. If you see a pdf file in the `pdf/<project_name>` folder, it means the pipeline has finished downloading the pdf file of the paper.
 5. If you see a notification in the dingtalk group, it means the pipeline has finished fetching the metadata of papers. After that, the system administrator will also get the notification and upload the metadata file to the label studio and download all the pdf files of the papers. The pdf files will be stored in the `pdf/<project_name>` folder. [**NOTE: Not all the papers have pdf files, if you see a paper that doesn't have a pdf file on label studio, it means the pipeline couldn't download the pdf file of the paper automatically. You can download the pdf file manually and upload it to the pdf folder**]
 6. To start labeling the papers;
+
+## Templates
+
+### For Abstract Labeling
+
+```
+<View>
+  <View>
+    <Style>
+        .rating div { margin-top: 0px !important; margin-bottom: 0px !important; }
+        .htx-richtext { text-align: justify; }
+        .text-area { width: 100%; }
+        .title { display: inline-flex; margin-right: 10px; }
+        .lsf-labels { margin: 0px !important; }
+        .lsf-main-view { background-color: #ffffff; }
+        .lsf-richtext__iframe { max-height: 400px; }
+    </Style>
+    <View style="display:flex;align-items:start;flex-direction:column;">
+      <View style="margin-bottom: 5px;">
+        <Filter toName="label" minlength="0" name="filter"/>
+      </View>
+      <Labels name="label" toName="text" showInline="true">
+        <Label value="gene" background="red"/>
+        <Label value="protein" background="orange"/>
+        <Label value="disease" background="olive"/>
+        <Label value="metabolite" background="green"/>
+        <Label value="pathway" background="violet"/>        
+        <Label value="anatomy" background="grey"/>
+        <label value="microbe" background="yellow"/>
+        <label value="chemical" background="black"/>
+        <label value="biological_process" background="purple"/>
+        <label value="cellular_component" background="pink"/>
+        <label value="molecular_function" background="olive"/>
+        <Label value="key_sentence" background="blue"/>
+      </Labels>
+      <View className="title">
+        <Header value="$title" underline="true"/>
+      </View>
+      <View className="rating" style="display: flex; flex-direction: row; align-items: center;">
+        <View style="margin-right: 15px;">
+          <Text name="journal" value="$journal" granularity="paragraph"/>
+        </View>
+        <View style="margin-right: 15px;">
+          <Text name="if" value="IF: $impact_factor" granularity="paragraph"/>
+        </View>
+        <View style="margin-right: 15px;">
+          <Text name="pmid" value="PMID: $pmid" granularity="paragraph"/>
+        </View>
+        <Choices name="valid" showInline="true" toName="text" choice="single-radio">
+          <Choice alias="YES" value="YES"/>
+          <Choice alias="NO" value="NO"/>
+          <Choice alias="UNKNOWN" value="Unknown"/>
+        </Choices>
+        <Rating name="rating" toName="text" maxRating="5" icon="star" size="medium"/>
+      </View>
+      <View style="width:100%;">
+        <HyperText name="text" valueType="text" value="$abstract"/>
+      </View>
+      <View className="text-area">
+        <Choices name="full_text_required" showInline="true" toName="text" choice="single-radio">
+          <Choice alias="YES" value="YES (Full Paper Required)" hint="Need to label full paper."/>
+          <Choice alias="NO" value="NO" selected="true" />
+        </Choices>
+        <TextArea name="notes" toName="notes" required="false" maxSubmissions="1" rows="5" placeholder="Input your notes."/>
+      </View>
+      <View>
+        <Relations>
+          <Relation value="associated_with"/>
+          <Relation value="upregulated_in"/>
+          <Relation value="downregulated_in"/>
+          <Relation value="activated_by"/>
+          <Relation value="inhibited_by"/>
+          <Relation value="reduced_by"/>
+          <Relation value="increased_by"/>
+          <Relation value="alleviated_by"/>
+          <Relation value="induced_by"/>
+        </Relations>
+      </View>
+    </View>
+  </View>
+</View>
+```
+
+### For Full Text Labeling
+
+
+```
+<View>
+  <View>
+    <Style>
+        .rating div { margin-top: 0px !important; margin-bottom: 0px !important; }
+        .htx-richtext { text-align: justify; }
+        .text-area { width: 100%; }
+        .title { display: inline-flex; margin-right: 10px; }
+        .lsf-labels { margin: 0px !important; }
+        .lsf-main-view { background-color: #ffffff; }
+        .lsf-richtext__iframe { max-height: 400px !important; }
+        .html .lsf-richtext__iframe { min-height: 600px !important; }
+    </Style>
+    <View style="display:flex;align-items:start;flex-direction:column;">
+      <View style="margin-bottom: 5px;">
+        <Filter toName="label" minlength="0" name="filter"/>
+      </View>
+      <Labels name="label" toName="html" showInline="true">
+        <Label value="gene" background="red"/>
+        <Label value="protein" background="orange"/>
+        <Label value="disease" background="olive"/>
+        <Label value="metabolite" background="green"/>
+        <Label value="pathway" background="violet"/>        
+        <Label value="anatomy" background="grey"/>
+        <label value="microbe" background="yellow"/>
+        <label value="chemical" background="black"/>
+        <label value="biological_process" background="purple"/>
+        <label value="cellular_component" background="pink"/>
+        <label value="molecular_function" background="olive"/>
+        <Label value="key_sentence" background="blue"/>
+      </Labels>
+      <View className="title">
+        <Header value="$title" underline="true"/>
+      </View>
+      <View className="rating" style="display: flex; flex-direction: row; align-items: center;">
+        <View style="margin-right: 15px;">
+          <Text name="journal" value="Journal: $journal" granularity="paragraph"/>
+        </View>
+        <View style="margin-right: 15px;">
+          <Text name="if" value="IF: $impact_factor" granularity="paragraph"/>
+        </View>
+        <View style="margin-right: 15px;">
+          <Text name="pmid" value="PMID: $pmid" granularity="paragraph"/>
+        </View>
+        <Choices name="valid" showInline="true" toName="html" choice="single-radio">
+          <Choice alias="YES" value="YES"/>
+          <Choice alias="NO" value="NO"/>
+          <Choice alias="UNKNOWN" value="Unknown"/>
+        </Choices>
+        <Rating name="rating" toName="html" maxRating="5" icon="star" size="medium"/>
+      </View>
+      <View style="width:100%;" className="html">
+       	<HyperText name="html" value="$html" valueType="url" />
+      </View>
+      <View>
+        <Relations>
+          <Relation value="associated_with"/>
+          <Relation value="upregulated_in"/>
+          <Relation value="downregulated_in"/>
+          <Relation value="activated_by"/>
+          <Relation value="inhibited_by"/>
+          <Relation value="reduced_by"/>
+          <Relation value="increased_by"/>
+          <Relation value="alleviated_by"/>
+          <Relation value="induced_by"/>
+        </Relations>
+      </View>
+    </View>
+  </View>
+</View>
+```

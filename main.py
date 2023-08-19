@@ -467,7 +467,8 @@ class PubMed(PubMedFetcher):
 #     "journal": "",
 #     "publication": "",
 #     "doi": "",
-#     "offline_link": ""
+#     "pdf": ""
+#     "html": ""
 # }
 
 
@@ -598,8 +599,9 @@ def update_metadata(pmid, metadata, metadata_file, pdf_filepath, html_filepath):
             pdf_url = 'https://publications.3steps.cn/publications/pdf/%s.pdf' % pmid
             j["pdf"] = f"<embed src='{pdf_url}' width='100%' height='600px' type='application/pdf'>"
 
-        if os.path.isfile(html_filepath):
-            j["html"] = 's3://publications/html/%s.html' % pmid
+        # if os.path.isfile(html_filepath):
+        #     j["html"] = 's3://publications/html/%s.html' % pmid
+        j["html"] = 's3://publications/html/%s.html' % pmid
 
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f)
