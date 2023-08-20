@@ -258,6 +258,9 @@ def make_dirs(dir):
         subdir = os.path.join(dir, subdir)
         if not os.path.exists(subdir):
             os.makedirs(subdir)
+            if not os.path.exists(os.path.join(subdir, ".gitkeep")):
+                with open(os.path.join(subdir, ".gitkeep"), "w") as f:
+                    f.write("")
 
 
 class FileEventHandler(FileSystemEventHandler):
