@@ -284,15 +284,16 @@ class FileEventHandler(FileSystemEventHandler):
                 logger.info("directory created:{0}".format(event.src_path))
                 basename = os.path.basename(event.src_path)
                 if os.path.join(self.root_dir, basename) == event.src_path:
+                    send_notification("系统已创建新的项目: %s" % basename, self.token)
                     make_dirs(event.src_path)
             else:
                 logger.info("file created:{0}".format(event.src_path))
                 pdf_dir = get_pdf_dir(self.root_dir, event.src_path)
-                if event.src_path.startswith(pdf_dir):
+                if not event.src_path.startswith(".") and event.src_path.startswith(pdf_dir):
                     handle_pdf_event(self.root_dir, event.src_path, self.token)
 
                 config_dir = get_config_dir(self.root_dir, event.src_path)
-                if event.src_path.startswith(config_dir):
+                if not event.src_path.startswith(".") and event.src_path.startswith(config_dir):
                     handle_configfile_event(self.root_dir, event.src_path, self.token)
         except Exception as e:
             logger.error(e)
