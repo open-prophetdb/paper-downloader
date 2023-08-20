@@ -292,11 +292,20 @@ class FileEventHandler(FileSystemEventHandler):
             else:
                 logger.info("file created:{0}".format(event.src_path))
                 pdf_dir = get_pdf_dir(self.root_dir, event.src_path)
-                if not event.src_path.startswith(".") and event.src_path.startswith(pdf_dir):
+                filename = os.path.basename(event.src_path)
+                if (
+                    not event.src_path.startswith(".")
+                    and event.src_path.startswith(pdf_dir)
+                    and not filename.startswith(".")
+                ):
                     handle_pdf_event(self.root_dir, event.src_path, self.token)
 
                 config_dir = get_config_dir(self.root_dir, event.src_path)
-                if not event.src_path.startswith(".") and event.src_path.startswith(config_dir):
+                if (
+                    not event.src_path.startswith(".")
+                    and event.src_path.startswith(config_dir)
+                    and not filename.startswith(".")
+                ):
                     handle_configfile_event(self.root_dir, event.src_path, self.token)
         except Exception as e:
             logger.error(e)
