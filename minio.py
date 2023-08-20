@@ -8,6 +8,7 @@ from watchdog.observers import Observer
 from watchdog.events import *
 import time
 import tempfile
+import hashlib
 from datetime import datetime
 import logging
 
@@ -35,6 +36,12 @@ python_bin = "/data/prophetdb/prophetdb-studio/paper-downloader/.venv/bin/python
 script = "/data/prophetdb/prophetdb-studio/paper-downloader/main.py"
 
 
+def md5(string):
+    m = hashlib.md5()
+    m.update(string.encode("utf-8"))
+    return m.hexdigest()
+
+
 def send_notification(msg):
     # Replace with your own DingTalk Bot webhook URL
     url = 'https://oapi.dingtalk.com/robot/send?access_token=cae67b70f6cf807554ba99c12a1131037bbb7ae748fe7bfcedff1becebed388f'
@@ -52,7 +59,22 @@ def send_notification(msg):
     logger.info(r.text)
 
 
-def handle_configfile_event(filepath):
+def read_bib(bib_path):
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+        temp_file = f.name
+        cmd = f"{python_bin} {script} bib2pd -o {temp_file} -b {bib_path}"
+
+        subprocess.call(cmd, shell=True)
+
+        if os.path.exists(temp_file):
+            with open(temp_file, 'r') as f:
+                data = json.load(f)
+                return data
+        else:
+            return None
+
+
+def handle_configfile_event(filepath, uniq_str):
     # If you change the directory structure, you need to change the parent_dir
     logger.info("Find a new config file: %s" % filepath)
 
@@ -63,39 +85,36 @@ def handle_configfile_event(filepath):
         dest_dir = os.path.join(metadata_dir, project)
         author = os.path.basename(os.path.dirname(filepath))
 
-        with open(os.path.abspath(filepath), 'r') as f:
-            if filepath.endswith(".json"):
-                data = json.load(f)
-            elif filepath.endswith("yaml"):
-                data = yaml.load(f, Loader=yaml.FullLoader)
-                dest_file = os.path.join(
-                    dest_dir, filename.replace(".yaml", ".json"))
-            elif filepath.endswith("bib"):
-                with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
-                    temp_file = f.name
-                    cmd = f"{python_bin} {script} bib2pd -o {temp_file} -b {filepath}"
-                    subprocess.call(cmd, shell=True)
+        try:
+            msg = f"{uniq_str}: 收到新的检索式，但是文件格式不正确。请检查文件格式是否为bib, json或yaml。"
+            data = None
+            with open(os.path.abspath(filepath), 'r') as f:
+                if filepath.endswith(".json"):
+                    data = json.load(f)
+                    dest_file = os.path.join(
+                        dest_dir, filename.replace(".json", ".json"))
+                    msg = f"{uniq_str}: 收到新的检索式，正在处理。"
+                elif filepath.endswith("yaml"):
+                    data = yaml.load(f, Loader=yaml.FullLoader)
+                    dest_file = os.path.join(
+                        dest_dir, filename.replace(".yaml", ".json"))
+                    msg = f"{uniq_str}: 收到新的检索式，正在处理。"
+                elif filepath.endswith("bib"):
+                    data = read_bib(filepath)
+                    dest_file = os.path.join(
+                        dest_dir, filename.replace(".bib", ".json"))
+                    msg = f"{uniq_str}: 收到新的检索式，正在处理。"
 
-                    if os.path.exists(temp_file):
-                        with open(temp_file, 'r') as f:
-                            data = json.load(f)
+            send_notification(msg)
+            if filepath.endswith(".log"):
+                return None
 
-                        filepath = temp_file
-                    else:
-                        logger.error("The file is not an expected config file")
-                        send_notification(
-                            "收到新的检索式，但是文件格式不正确。请检查文件格式是否为json, bib或yaml。")
-                        return None
-
-                dest_file = os.path.join(
-                    dest_dir, filename.replace(".bib", ".json"))
-            else:
-                if filepath.endswith(".log"):
-                    return None
-                else:
-                    logger.error("The file is not an expected config file")
-                    send_notification("收到新的检索式，但是文件格式不正确。请检查文件格式是否为json或yaml。")
-                    return None
+            if data is None:
+                return None
+        except Exception as e:
+            logger.error(e)
+            send_notification(f"{uniq_str}: 收到新的检索式，但是文件格式不正确。请检查文件格式是否为bib, json或yaml。")
+            return None
 
         # Check & Update the metadata file
         data.update({"author": author})
@@ -106,7 +125,6 @@ def handle_configfile_event(filepath):
                 filepath = temp_file
 
         download_pdf = data.get("download_pdf")
-        send_notification(f"收到{author}新的检索式，正在处理中，请稍后。")
 
         cmd = f"{python_bin} {script} fetch-metadata -d 3 -o {dest_file} -c {filepath}"
 
@@ -114,20 +132,18 @@ def handle_configfile_event(filepath):
             relative_dir = os.path.relpath(dest_dir, metadata_dir)
             minio_dir = os.path.join("metadata", relative_dir)
             filename = os.path.basename(dest_file)
-            msg = f"{author}上传了新的检索式，但系统检测到在{minio_dir}目录已有相同的Metadata文件{filename}, 请重命名配置文件后重试。"
+            msg = f"{uniq_str}: {author}上传了新的检索式，但系统检测到在{minio_dir}目录已有相同的Metadata文件{filename}, 请重命名配置文件后重试。"
             send_notification(msg)
             return None
 
         try:
             subprocess.call(cmd, shell=True)
             if download_pdf:
-                msg = f"{author}上传了新的检索式，系统已获取到新的文献元数据。正在下载文献PDF，请稍后。"
+                msg = f"{uniq_str}: {author}上传了新的检索式，系统已获取到新的文献元数据。正在下载文献PDF，请稍后。"
                 send_notification(msg)
-                download_pdfs(dest_file)
+                download_pdfs(dest_file, uniq_str)
 
-                msg = f"系统已处理完毕{author}上传的新的检索式。请前往publications.3steps.cn下载Metadata，并导入至Prophet Studio。"
-            else:
-                msg = f"{author}上传了新的检索式，系统已处理完毕。请前往publications.3steps.cn下载Metadata，并导入至Prophet Studio。"
+            msg = f"{uniq_str}: 系统已处理完毕{author}上传的新的检索式。请前往publications.3steps.cn下载Metadata，并导入至Prophet Studio。"
 
             send_notification(msg)
         except Exception as e:
@@ -138,7 +154,7 @@ def handle_configfile_event(filepath):
         logger.error("The file is not an expected config json file")
 
 
-def download_pdfs(metadata_json_file):
+def download_pdfs(metadata_json_file, uniq_str):
     if not os.path.isfile(metadata_json_file):
         logger.error("The metadata file is not an expected json file")
         return None
@@ -146,22 +162,28 @@ def download_pdfs(metadata_json_file):
     cmd = f"{python_bin} {script} fetch-pdf -o {pdf_dir} -m {metadata_json_file}"
     try:
         subprocess.call(cmd, shell=True)
-        msg = f"系统已下载完所有文献PDF。请前往Prophet Studio查看。"
+        msg = f"{uniq_str}: 系统已下载完所有文献PDF。请前往Prophet Studio查看。"
         send_notification(msg)
     except Exception as e:
-        msg = f"系统处理时出现了错误。请管理员前往Prophet Server查看错误信息。以下是错误信息：\n{e}"
+        msg = f"{uniq_str}: 系统处理时出现了错误。请管理员前往Prophet Server查看错误信息。以下是错误信息：\n{e}"
         logger.error(msg)
         send_notification(msg)
 
 # Define a function to handle events
 
 
-def handle_pdf_event(filepath):
+def handle_pdf_event(filepath, uniq_str):
     # If you change the directory structure, you need to change the parent_dir
     logger.info("Find a new file: %s" % filepath)
     if os.path.isfile(filepath) and filepath.endswith(".pdf") and filepath.startswith(pdf_dir):
+        msg = f"{uniq_str}: 系统已获取到新的文献PDF。正在转换为HTML，请稍后。"
+        send_notification(msg)
+
         cmd = f"{python_bin} {script} pdf2html -p {pdf_dir} -h {html_dir}"
         subprocess.call(cmd, shell=True)
+        if os.path.exists(os.path.join(html_dir, os.path.basename(filepath).replace(".pdf", ".html"))):
+            msg = f"{uniq_str}: 系统已将所有文献PDF转换为HTML。请前往Prophet Studio查看。"
+            send_notification(msg)
     else:
         logger.info("The file is not a expected pdf file")
 
@@ -183,12 +205,13 @@ class FileEventHandler(FileSystemEventHandler):
             if event.is_directory:
                 logger.info("directory created:{0}".format(event.src_path))
             else:
+                uniq_str = md5(event.src_path)
                 logger.info("file created:{0}".format(event.src_path))
                 if event.src_path.startswith(pdf_dir):
-                    handle_pdf_event(event.src_path)
+                    handle_pdf_event(event.src_path, uniq_str)
 
                 if event.src_path.startswith(config_dir):
-                    handle_configfile_event(event.src_path)
+                    handle_configfile_event(event.src_path, uniq_str)
         except Exception as e:
             logger.error(e)
 
