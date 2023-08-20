@@ -27,3 +27,4 @@ retry==0.9.2
 retrying
 impact-factor==1.1.0
 bibtexparser
+watchdog==3.0.0

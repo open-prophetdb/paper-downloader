@@ -24,9 +24,9 @@ from retrying import retry
 logger = logging.getLogger('paper-downloader')
 logger.setLevel(logging.DEBUG)
 
-if os.path.exists('/var/log'):
+def set_log(log_path):
     # create console handler and set level to debug
-    fh = logging.FileHandler('/var/log/paper-downloader.log')
+    fh = logging.FileHandler(log_path)
     fh.setLevel(logging.DEBUG)
     # create formatter
     formatter = logging.Formatter(
@@ -70,7 +70,13 @@ def embed_styles(html_file):
         # Create a new `style` element and insert the CSS contents
         style_tag = soup.new_tag('style')
         style_tag.string = css
-        soup.head.append(style_tag)
+        if soup.head is None:
+            head = soup.new_tag('head')
+            head.append(style_tag)
+            soup.insert(0, head)
+        else:
+            soup.head.append(style_tag)
+
         with open(html_file, 'w') as f:
             f.write(str(soup))
     else:
@@ -106,7 +112,7 @@ class SciHub(object):
 
     def __init__(self):
         self.sess = requests.Session()
-        self.sess.headers = HEADERS
+        self.sess.headers = HEADERS  # type: ignore
         self.available_base_url_list = self._get_available_scihub_urls()
         self.base_url = self.available_base_url_list[0] + '/'
 
@@ -138,7 +144,7 @@ class SciHub(object):
         if not self.available_base_url_list:
             raise Exception('Ran out of valid sci-hub urls')
         del self.available_base_url_list[0]
-        self.base_url = self.available_base_url_list[0] + '/'
+        self.base_url = f'{self.available_base_url_list[0]}/'
         logger.info("I'm changing to {}".format(
             self.available_base_url_list[0]))
 
@@ -534,7 +540,11 @@ def pubmed():
 @click.option('--config', '-c', required=True,
               type=click.Path(exists=True, file_okay=True, dir_okay=False),
               help="Where is the config file.")
-def fetch_metadata(output_file, config, delay):
+@click.option('--logpath', '-l', required=False, default="/var/log/paper-downloader.log",
+              help="Where is the log file.")
+def fetch_metadata(output_file, config, delay, logpath):
+    set_log(logpath)
+
     if os.path.exists(output_file):
         raise Exception("""
 %s exists. if you want to update the metadata, please delete it first or rename it.
@@ -612,7 +622,11 @@ def update_metadata(pmid, metadata, metadata_file, pdf_filepath, html_filepath):
               help="The file which saved the metadata.")
 @click.option('--output-dir', '-o', required=True,
               help="The directory which saved the full text.")
-def fetch_pdf(metadata_file, output_dir):
+@click.option('--logpath', '-l', required=False, default="/var/log/paper-downloader.log",
+              help="Where is the log file.")
+def fetch_pdf(metadata_file, output_dir, logpath):
+    set_log(logpath)
+
     if not os.path.exists(metadata_file):
         logger.warning("Cannot find the metadata file.")
         raise Exception("Cannot find the metadata file.")
@@ -674,7 +688,11 @@ def fetch_pdf(metadata_file, output_dir):
               help="The directory which saved the pdf.")
 @click.option('--html-dir', '-h', required=True,
               help="The directory which saved the html.")
-def pdf2html(pdf_dir, html_dir):
+@click.option('--logpath', '-l', required=False, default="/var/log/paper-downloader.log",
+              help="Where is the log file.")
+def pdf2html(pdf_dir, html_dir, logpath):
+    set_log(logpath)
+
     pdf_dir = os.path.abspath(pdf_dir)
     html_dir = os.path.abspath(html_dir)
     if not os.path.exists(html_dir):
@@ -702,7 +720,11 @@ def pdf2html(pdf_dir, html_dir):
               help="A path of bib file.")
 @click.option('--output-file', '-o', required=True,
               help="An output file.")
-def bib2pd(bib_file, output_file):
+@click.option('--logpath', '-l', required=False, default="/var/log/paper-downloader.log",
+              help="Where is the log file.")
+def bib2pd(bib_file, output_file, logpath):
+    set_log(logpath)
+
     if not os.path.exists(bib_file):
         raise Exception("Cannot find the bib file.")
     bib_file = os.path.abspath(bib_file)
@@ -735,7 +757,7 @@ def bib2pd(bib_file, output_file):
         raise Exception("Cannot load the bib file.")
 
 
-main = click.CommandCollection(sources=[pubmed])
+cli = click.CommandCollection(sources=[pubmed])
 
 if __name__ == '__main__':
-    main()
+    cli()
