@@ -1,0 +1,16 @@
+[Unit]
+Description=Paper Downloder
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/prophetdb/prophetdb-studio/paper-downloader/
+ExecStart=/data/prophetdb/prophetdb-studio/paper-downloader/.venv/bin/python minio.py
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
