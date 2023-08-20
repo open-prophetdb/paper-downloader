@@ -291,10 +291,12 @@ class FileEventHandler(FileSystemEventHandler):
                     make_dirs(event.src_path)
             else:
                 logger.info("file created:{0}".format(event.src_path))
-                pdf_dir = get_pdf_dir(self.root_dir, event.src_path)
                 filename = os.path.basename(event.src_path)
+                project_name = get_project_name(self.root_dir, event.src_path)
+
+                pdf_dir = get_pdf_dir(self.root_dir, event.src_path)
                 if (
-                    not event.src_path.startswith(".")
+                    not project_name.startswith(".")
                     and event.src_path.startswith(pdf_dir)
                     and not filename.startswith(".")
                 ):
@@ -302,7 +304,7 @@ class FileEventHandler(FileSystemEventHandler):
 
                 config_dir = get_config_dir(self.root_dir, event.src_path)
                 if (
-                    not event.src_path.startswith(".")
+                    not project_name.startswith(".")
                     and event.src_path.startswith(config_dir)
                     and not filename.startswith(".")
                 ):
