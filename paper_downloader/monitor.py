@@ -300,6 +300,7 @@ class FileEventHandler(FileSystemEventHandler):
                     and event.src_path.startswith(pdf_dir)
                     and not filename.startswith(".")
                 ):
+                    make_dirs(os.path.join(self.root_dir, project_name))
                     handle_pdf_event(self.root_dir, event.src_path, self.token)
 
                 config_dir = get_config_dir(self.root_dir, event.src_path)
@@ -308,6 +309,7 @@ class FileEventHandler(FileSystemEventHandler):
                     and event.src_path.startswith(config_dir)
                     and not filename.startswith(".")
                 ):
+                    make_dirs(os.path.join(self.root_dir, project_name))
                     handle_configfile_event(self.root_dir, event.src_path, self.token)
         except Exception as e:
             logger.error(e)
