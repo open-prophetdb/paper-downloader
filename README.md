@@ -1,31 +1,90 @@
 # Paper Downloader
 
-## How to install the paper downloader
+There are so many papers on the internet and we need to extract findings from them. Sometimes we need to label the papers manually or automatically. For example, we use the label studio to label the papers manually.
+
+![Label Studio](./examples/label-studio.png)
+
+Before labeling, we need to prepare the papers for the NLP pipeline or the labeling pipeline first. This project is used to prepare the metadata of papers, download the pdf files of papers and convert the pdf files to html files.
+
+## Use `paper-downloader` as a command line tool
+### Install the paper downloader
 
 ```
 pip install git+https://github.com/yjcyxky/paper-downloader.git
 ```
 
-## How to prepare papers for the NLP pipeline
-### Fetch metadata
+### Prepare papers for the NLP pipeline
+#### Fetch metadata
 
 ```
 pdownloader fetch-metadata -d 3 -o metadata/file.json -c config/pmids_config.json
 ```
 
-### Fetch PDFs
+#### Fetch PDFs
 
 ```
 pdownloader fetch-pdf -m metadata/file.json -o ./pdf
 ```
 
-### PDF to HTML
+#### PDF to HTML
 
 ```
 pdownloader pdf2html -p ./pdf -h ./html
 ```
 
-## How to setup the label studio
+## Use `paper-downloader` with minio
+
+Advantage: You can make the paper-downloader as a service and it will listen the events of the bucket. When you upload a file to the bucket, the paper-downloader will download the file automatically.
+
+We assume the project directory is `/data`
+
+### Setup the minio
+
+```
+cd /data
+git clone https://github.com/yjcyxky/paper-downloader.git
+
+cd /data/paper-downloader/docker
+docker-compose up -d
+```
+
+### Setup the bucket
+
+```
+cd /data/paper-downloader/docker/data/paper-downloader
+
+# Create a bucket for your projects
+mkdir <project-name1> <project-name2> <project-name3> ...
+
+
+# Login the minio server and setup a set of accounts, groups and policies for your projects
+# Recommended: Use the same name for the bucket, group and policy and add related accounts to the group.
+# The policy example is in the `examples/policy.json` file
+```
+
+### Setup the paper downloader
+
+```bash
+# Install the paper downloader
+cd /data/paper-downloader
+virtualenv .venv
+source .venv/bin/activate
+pip install git+https://github.com/yjcyxky/paper-downloader.git
+
+# Launch the paper downloader service to listen the events of the bucket
+cp /data/paper-downloader/paper-downloader.service /etc/systemd/system/
+
+# You need to modify the paper-downloader.service file according to your situation, such as <access-key>, <secret-key>, <dingtalk-access-token>
+
+# Enable the paper downloader service
+systemctl enable paper-downloader.service
+systemctl start paper-downloader.service
+```
+
+## [Advanced] Setup the label studio
+
+More details on the `Label Studio`, please refer to the [customized label studio](https://github.com/yjcyxky/label-studio), which is a labeling system for biomedical paper.
+
 ### Create a service account on the miniocloud
 
 1. Login to the miniocloud

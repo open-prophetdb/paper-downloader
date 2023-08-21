@@ -5,9 +5,9 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/data/prophetdb/prophetdb-studio/paper-downloader/
-Environment="PATH=/data/prophetdb/prophetdb-studio/.venv/bin:$PATH"
-ExecStart=/data/prophetdb/prophetdb-studio/.venv/bin/pfetcher-monitor minio -u xxx -p xxx -d /data/prophetdb/prophetdb-studio/paper-downloader/ -t xxx -s 127.0.0.1:9000
+WorkingDirectory=/data/paper-downloader
+Environment="PATH=/data/paper-downloader/.venv/bin:$PATH"
+ExecStart=/data/paper-downloader/.venv/bin/pfetcher-monitor minio -u <access-key> -p <secret-key> -d /data/paper-downloader/docker/data/paper-downloader/ -t <dingtalk-access-token> -s 127.0.0.1:9000
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 TimeoutStartSec=30
