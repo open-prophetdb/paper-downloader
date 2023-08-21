@@ -5,8 +5,7 @@ import json
 import yaml
 import subprocess
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from paper_downloader import send_notification
+from watchdog.events import *
 import time
 import tempfile
 import hashlib
@@ -20,12 +19,14 @@ logger.setLevel(logging.DEBUG)
 # create console handler and set level to debug
 fh = logging.FileHandler("/var/log/notifier.log")
 fh.setLevel(logging.DEBUG)
-# create formatter
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-# add formatter to console handler
 fh.setFormatter(formatter)
-# add console handler to logger
 logger.addHandler(fh)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 # root_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications"
 # config_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications/config"
@@ -35,6 +36,21 @@ logger.addHandler(fh)
 # pdf_dir = "/data/prophetdb/prophetdb-studio/data/paper-downloader/publications/pdf"
 # python_bin = "/data/prophetdb/prophetdb-studio/paper-downloader/.venv/bin/python"
 # script = "/data/prophetdb/prophetdb-studio/paper-downloader/main.py"
+
+
+def send_notification(msg, access_token=None):
+    # Replace with your own DingTalk Bot webhook URL
+    url = f"https://oapi.dingtalk.com/robot/send?access_token={access_token}"
+
+    headers = {"Content-Type": "application/json;charset=utf-8"}
+
+    data = {
+        "msgtype": "text",
+        "text": {"content": msg},
+    }
+
+    r = requests.post(url, headers=headers, data=json.dumps(data))
+    logger.info(r.text)
 
 
 def md5(string):
@@ -146,6 +162,9 @@ def handle_configfile_event(root_dir, filepath, access_token):
                 return None
 
             if data is None:
+                send_notification(
+                    f"{uniq_str}: 文件格式不正确。请检查文件格式是否为bib, json或yaml。", access_token
+                )
                 return None
         except Exception as e:
             logger.error(e)
@@ -166,7 +185,7 @@ def handle_configfile_event(root_dir, filepath, access_token):
         cmd = f"{bin} fetch-metadata -d 3 -o {dest_file} -c {filepath} -l {logpath} -t {access_token}"
 
         if os.path.exists(dest_file):
-            msg = f"{uniq_str}: 系统检测到在{metadata_dir}目录已有相同的Metadata文件{filename}, 请重命名配置文件后重试。"
+            msg = f"{uniq_str}: 系统检测到在metadata目录已有同名的Metadata文件, 请重命名配置文件后重试。"
             send_notification(msg, access_token)
             return None
 
@@ -255,11 +274,53 @@ def make_dirs(dir):
                     f.write("")
 
 
-class FileEventHandler(FileSystemEventHandler):
+def handle_create_event(root_dir, src_path, access_token):
+    try:
+        if os.path.isdir(src_path):
+            basename = os.path.basename(src_path)
+            if os.path.join(root_dir, basename) == src_path:
+                logger.info("directory created:{0}".format(src_path))
+                send_notification("系统已创建新的项目: %s" % basename, access_token)
+                make_dirs(src_path)
+        else:
+            filename = os.path.basename(src_path)
+            project_name = get_project_name(root_dir, src_path)
+            pdf_dir = get_pdf_dir(root_dir, src_path)
+            config_dir = get_config_dir(root_dir, src_path)
+
+            logger.info(
+                "file created: {0}, {1}, {2}, {3}".format(
+                    src_path, project_name, pdf_dir, config_dir
+                )
+            )
+            if (
+                not project_name.startswith(".")
+                and src_path.startswith(pdf_dir)
+                and not filename.startswith(".")
+            ):
+                make_dirs(os.path.join(root_dir, project_name))
+                handle_pdf_event(root_dir, src_path, access_token)
+
+            if (
+                not project_name.startswith(".")
+                and src_path.startswith(config_dir)
+                and not filename.startswith(".")
+            ):
+                make_dirs(os.path.join(root_dir, project_name))
+                handle_configfile_event(root_dir, src_path, access_token)
+    except Exception as e:
+        logger.error(e)
+
+
+class FileEventHandler(RegexMatchingEventHandler):
     def __init__(self, root_dir, token):
         self.root_dir = root_dir
         self.token = token
-        FileSystemEventHandler.__init__(self)
+        super(FileEventHandler, self).__init__(
+            regexes=[r".*\.json", r".*\.pdf", r".*\.bib", r".*\.yaml", r".*\.yml"],
+            ignore_directories=True,
+            ignore_regexes=[r".*\.gitkeep", r".*\.minio.sys.*"],
+        )
 
     # def on_moved(self, event):
     #     if event.is_directory:
@@ -274,38 +335,11 @@ class FileEventHandler(FileSystemEventHandler):
     #         )
 
     def on_created(self, event):
-        try:
-            if event.is_directory:
-                basename = os.path.basename(event.src_path)
-                if os.path.join(self.root_dir, basename) == event.src_path:
-                    logger.info("directory created:{0}".format(event.src_path))
-                    send_notification("系统已创建新的项目: %s" % basename, self.token)
-                    make_dirs(event.src_path)
-            else:
-                filename = os.path.basename(event.src_path)
-                project_name = get_project_name(self.root_dir, event.src_path)
+        print("on_created: {0}, {1}".format(event.src_path, event.is_directory))
+        if ".minio.sys" in event.src_path:
+            return
 
-                pdf_dir = get_pdf_dir(self.root_dir, event.src_path)
-                if (
-                    not project_name.startswith(".")
-                    and event.src_path.startswith(pdf_dir)
-                    and not filename.startswith(".")
-                ):
-                    logger.info("file created:{0}".format(event.src_path))
-                    make_dirs(os.path.join(self.root_dir, project_name))
-                    handle_pdf_event(self.root_dir, event.src_path, self.token)
-
-                config_dir = get_config_dir(self.root_dir, event.src_path)
-                if (
-                    not project_name.startswith(".")
-                    and event.src_path.startswith(config_dir)
-                    and not filename.startswith(".")
-                ):
-                    logger.info("file created:{0}".format(event.src_path))
-                    make_dirs(os.path.join(self.root_dir, project_name))
-                    handle_configfile_event(self.root_dir, event.src_path, self.token)
-        except Exception as e:
-            logger.error(e)
+        handle_create_event(self.root_dir, event.src_path, self.token)
 
     # def on_deleted(self, event):
     #     if event.is_directory:
@@ -320,12 +354,15 @@ class FileEventHandler(FileSystemEventHandler):
     #         logger.info("file modified:{0}".format(event.src_path))
 
 
-@click.command(help="Monitor the directory and handle the events")
+cli = click.Group()
+
+
+@cli.command(help="Monitor the directory and handle the events")
 @click.option("-d", "--root-dir", default=".", help="The directory to be monitored")
 @click.option(
     "-t", "--token", default=".", help="The token to be used to send notification"
 )
-def cli(root_dir, token):
+def watchdog(root_dir, token):
     observer = Observer()
     root_dir = root_dir.rstrip("/")
     event_handler = FileEventHandler(root_dir, token)
@@ -337,6 +374,125 @@ def cli(root_dir, token):
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
+
+def get_event_handler(root_dir, access_token):
+    def process_minio_event(event):
+        """Process minio event
+
+        Args:
+            event (dict): minio event
+
+        Returns:
+            None
+
+        event = {
+            "Records": [
+                {
+                    "eventName": "s3:ObjectCreated:Put",
+                    ...
+                    "s3": {
+                        "bucket": {
+                            "name": "test",
+                            ...
+                        },
+                        "object": {
+                            "key": "test/test.pdf",
+                            ...
+                        }
+                    }
+                }
+            ]
+        }
+        """
+        filtered_events = []
+        for record in event.get("Records", []):
+            event_name = record.get("eventName", '')
+
+            if event_name.startswith("s3:ObjectCreated"):
+                bucket_name = record.get("s3", {}).get("bucket", {}).get("name", "")
+                object_key = record.get("s3", {}).get("object", {}).get("key", "")
+                filtered_events.append({
+                    "bucket_name": bucket_name,
+                    "object_key": object_key,
+                    "event_type": event_name,
+                })
+
+        logger.info("Find {0} events".format(len(filtered_events)))
+        for event in filtered_events:
+            bucket_name, object_name, event_type = (
+                event["bucket_name"],
+                event["object_key"],
+                event["event_type"],
+            )
+
+            logger.info("file created: {0}, {1}, {2}".format(bucket_name, object_name, event_type))
+            src_path = os.path.join(root_dir, bucket_name, object_name)
+            handle_create_event(root_dir, src_path, access_token)
+
+    return process_minio_event
+
+
+@cli.command(help="Monitor the directory and handle the events from minio.")
+@click.option("-u", "--access-key", help="The access key of minio", required=True)
+@click.option("-p", "--secret-key", help="The secret key of minio", required=True)
+@click.option(
+    "-s",
+    "--server",
+    help="The server of minio",
+    required=False,
+    default="127.0.0.1:9000",
+)
+@click.option(
+    "-S", "--secure", help="Whether to use https", required=False, default=False
+)
+@click.option(
+    "-t",
+    "--access-token",
+    help="The access token to be used to send notification",
+    required=True,
+)
+@click.option(
+    "-d",
+    "--root-dir",
+    help="The root directory to be monitored",
+    required=False,
+    default=".",
+)
+def minio(access_key, secret_key, server, secure, access_token, root_dir="."):
+    from minio import Minio
+    import threading
+
+    minio_client = Minio(
+        server, access_key=access_key, secret_key=secret_key, secure=secure
+    )
+
+    # Get all buckets.
+    buckets = minio_client.list_buckets()
+    logger.info("buckets: {0}".format(buckets))
+
+    def listen_to_bucket(minio_client, bucket_name, root_dir, access_token):
+        logger.info("listen to bucket: {0}".format(bucket_name))
+        try:
+            events = minio_client.listen_bucket_notification(bucket_name)
+            for event in events:
+                logger.debug("Get event: {0}".format(event))
+                get_event_handler(root_dir, access_token)(event)
+        except Exception as err:
+            logger.error("Error: %s" % err)
+
+    # Listen multiple buckets.
+    threads = []
+    for bucket in buckets:
+        thread = threading.Thread(
+            target=listen_to_bucket,
+            args=(minio_client, bucket.name, root_dir, access_token),
+        )
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
 
 
 if __name__ == "__main__":

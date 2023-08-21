@@ -18,12 +18,25 @@ from bs4 import BeautifulSoup
 import urllib3
 import bibtexparser
 from retrying import retry
-from paper_downloader import send_notification
 
 # log config
 # create logger
 logger = logging.getLogger("paper-downloader")
 logger.setLevel(logging.DEBUG)
+
+def send_notification(msg, access_token=None):
+    # Replace with your own DingTalk Bot webhook URL
+    url = f"https://oapi.dingtalk.com/robot/send?access_token={access_token}"
+
+    headers = {"Content-Type": "application/json;charset=utf-8"}
+
+    data = {
+        "msgtype": "text",
+        "text": {"content": msg},
+    }
+
+    r = requests.post(url, headers=headers, data=json.dumps(data))
+    logger.info(r.text)
 
 
 def set_log(log_path):
@@ -412,7 +425,7 @@ class PubMed(PubMedFetcher):
             logger.info("Fetch the first %s articles" % len(r))
             if token:
                 send_notification(
-                    f"Fetch the {(i + 1) * 250 / self.counts} articles", token
+                    f"Fetch the {(i + 1) * 250}/{self.counts} articles", token
                 )
             pmids.extend(r)
         self.pmids = pmids
