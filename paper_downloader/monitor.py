@@ -5,7 +5,8 @@ import json
 import yaml
 import subprocess
 from watchdog.observers import Observer
-from watchdog.events import *
+from watchdog.events import FileSystemEventHandler
+from paper_downloader import send_notification
 import time
 import tempfile
 import hashlib
@@ -53,21 +54,6 @@ def get_bin(bin_name):
         raise Exception(
             f"Can't find {bin_name} in your system. Please install it first."
         )
-
-
-def send_notification(msg, access_token=None):
-    # Replace with your own DingTalk Bot webhook URL
-    url = f"https://oapi.dingtalk.com/robot/send?access_token={access_token}"
-
-    headers = {"Content-Type": "application/json;charset=utf-8"}
-
-    data = {
-        "msgtype": "text",
-        "text": {"content": msg},
-    }
-
-    r = requests.post(url, headers=headers, data=json.dumps(data))
-    logger.info(r.text)
 
 
 def read_bib(bib_path):
@@ -127,6 +113,11 @@ def handle_configfile_event(root_dir, filepath, access_token):
             .replace("config", "log")
         )
 
+        if not os.path.exists(os.path.join(config_dir, filename)):
+            msg = f"{uniq_str}: 收到新的检索式，但文件不存在或未直接将文件放置在config目录下。"
+            send_notification(msg, access_token)
+            return
+
         try:
             msg = f"{uniq_str}: 收到新的检索式，但是文件格式不正确。请检查文件格式是否为bib, json或yaml。"
             data = None
@@ -172,19 +163,20 @@ def handle_configfile_event(root_dir, filepath, access_token):
         download_pdf = data.get("download_pdf")
 
         bin = get_bin("pfetcher")
-        cmd = f"{bin} fetch-metadata -d 3 -o {dest_file} -c {filepath} -l {logpath}"
+        cmd = f"{bin} fetch-metadata -d 3 -o {dest_file} -c {filepath} -l {logpath} -t {access_token}"
 
         if os.path.exists(dest_file):
             msg = f"{uniq_str}: 系统检测到在{metadata_dir}目录已有相同的Metadata文件{filename}, 请重命名配置文件后重试。"
-            send_notification(msg)
+            send_notification(msg, access_token)
             return None
 
         try:
+            send_notification(f"{uniq_str}: 解析配置文件成功", access_token)
             subprocess.call(cmd, shell=True)
             if download_pdf:
                 msg = f"{uniq_str}: 系统已获取到新的文献元数据。正在下载文献PDF，请稍后。"
                 send_notification(msg, access_token)
-                download_pdfs(root_dir, dest_file)
+                download_pdfs(root_dir, dest_file, access_token)
 
             msg = f"{uniq_str}: 系统已处理完毕新的检索式。请前往publications.3steps.cn下载Metadata，并导入至Prophet Studio。"
 
@@ -197,7 +189,7 @@ def handle_configfile_event(root_dir, filepath, access_token):
         logger.error("The file is not an expected config json file")
 
 
-def download_pdfs(root_dir, metadata_json_file):
+def download_pdfs(root_dir, metadata_json_file, access_token):
     if not os.path.isfile(metadata_json_file):
         logger.error("The metadata file is not an expected json file")
         return None
@@ -213,11 +205,11 @@ def download_pdfs(root_dir, metadata_json_file):
     try:
         subprocess.call(cmd, shell=True)
         msg = f"{project_name}: 系统已下载完所有文献PDF。请前往Prophet Studio查看。"
-        send_notification(msg)
+        send_notification(msg, access_token)
     except Exception as e:
         msg = f"{project_name}: 系统处理时出现了错误。请管理员前往Prophet Server查看错误信息。以下是错误信息：\n{e}"
         logger.error(msg)
-        send_notification(msg)
+        send_notification(msg, access_token)
 
 
 # Define a function to handle events
@@ -269,28 +261,27 @@ class FileEventHandler(FileSystemEventHandler):
         self.token = token
         FileSystemEventHandler.__init__(self)
 
-    def on_moved(self, event):
-        if event.is_directory:
-            logger.info(
-                "directory moved from {0} to {1}".format(
-                    event.src_path, event.dest_path
-                )
-            )
-        else:
-            logger.info(
-                "file moved from {0} to {1}".format(event.src_path, event.dest_path)
-            )
+    # def on_moved(self, event):
+    #     if event.is_directory:
+    #         logger.info(
+    #             "directory moved from {0} to {1}".format(
+    #                 event.src_path, event.dest_path
+    #             )
+    #         )
+    #     else:
+    #         logger.info(
+    #             "file moved from {0} to {1}".format(event.src_path, event.dest_path)
+    #         )
 
     def on_created(self, event):
         try:
             if event.is_directory:
-                logger.info("directory created:{0}".format(event.src_path))
                 basename = os.path.basename(event.src_path)
                 if os.path.join(self.root_dir, basename) == event.src_path:
+                    logger.info("directory created:{0}".format(event.src_path))
                     send_notification("系统已创建新的项目: %s" % basename, self.token)
                     make_dirs(event.src_path)
             else:
-                logger.info("file created:{0}".format(event.src_path))
                 filename = os.path.basename(event.src_path)
                 project_name = get_project_name(self.root_dir, event.src_path)
 
@@ -300,6 +291,7 @@ class FileEventHandler(FileSystemEventHandler):
                     and event.src_path.startswith(pdf_dir)
                     and not filename.startswith(".")
                 ):
+                    logger.info("file created:{0}".format(event.src_path))
                     make_dirs(os.path.join(self.root_dir, project_name))
                     handle_pdf_event(self.root_dir, event.src_path, self.token)
 
@@ -309,22 +301,23 @@ class FileEventHandler(FileSystemEventHandler):
                     and event.src_path.startswith(config_dir)
                     and not filename.startswith(".")
                 ):
+                    logger.info("file created:{0}".format(event.src_path))
                     make_dirs(os.path.join(self.root_dir, project_name))
                     handle_configfile_event(self.root_dir, event.src_path, self.token)
         except Exception as e:
             logger.error(e)
 
-    def on_deleted(self, event):
-        if event.is_directory:
-            logger.info("directory deleted:{0}".format(event.src_path))
-        else:
-            logger.info("file deleted:{0}".format(event.src_path))
+    # def on_deleted(self, event):
+    #     if event.is_directory:
+    #         logger.info("directory deleted:{0}".format(event.src_path))
+    #     else:
+    #         logger.info("file deleted:{0}".format(event.src_path))
 
-    def on_modified(self, event):
-        if event.is_directory:
-            logger.info("directory modified:{0}".format(event.src_path))
-        else:
-            logger.info("file modified:{0}".format(event.src_path))
+    # def on_modified(self, event):
+    #     if event.is_directory:
+    #         logger.info("directory modified:{0}".format(event.src_path))
+    #     else:
+    #         logger.info("file modified:{0}".format(event.src_path))
 
 
 @click.command(help="Monitor the directory and handle the events")
