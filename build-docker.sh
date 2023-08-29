@@ -17,9 +17,9 @@ else
 fi
 
 # Build standalone docker image
-docker build -t paper-downloader:${VERSION}-${HASH} . && \
+docker build -t nordata/paper-downloader:${VERSION}-${HASH} . && \
 
 if [ "$1" == "--push" ]; then
-  docker tag paper-downloader:${VERSION}-${HASH} ghcr.io/yjcyxky/paper-downloader:${VERSION}-${HASH} && \
+  docker tag nordata/paper-downloader:${VERSION}-${HASH} ghcr.io/yjcyxky/paper-downloader:${VERSION}-${HASH} && \
   docker push ghcr.io/yjcyxky/paper-downloader:${VERSION}-${HASH}
 fi
