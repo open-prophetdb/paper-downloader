@@ -24,6 +24,7 @@ from retrying import retry
 logger = logging.getLogger("paper-downloader")
 logger.setLevel(logging.DEBUG)
 
+
 def send_notification(msg, access_token=None):
     # Replace with your own DingTalk Bot webhook URL
     url = f"https://oapi.dingtalk.com/robot/send?access_token={access_token}"
@@ -845,7 +846,15 @@ def pdf2html(pdf_dir, html_dir, logpath):
     default="/var/log/paper-downloader.log",
     help="Where is the log file.",
 )
-def bib2pd(bib_file, output_file, logpath):
+@click.option(
+    "--download-pdf",
+    "-d",
+    required=False,
+    is_flag=True,
+    default=False,
+    help="Whether download pdf.",
+)
+def bib2pd(bib_file, output_file, logpath, download_pdf=False):
     set_log(logpath)
 
     if not os.path.exists(bib_file):
@@ -869,7 +878,6 @@ def bib2pd(bib_file, output_file, logpath):
                         pmids.append(pmid)
 
             query_str = " OR ".join(pmids)
-            download_pdf = True
             output = {"query_str": query_str, "download_pdf": download_pdf}
 
             write_json(output, output_file)
