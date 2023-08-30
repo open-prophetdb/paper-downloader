@@ -3,6 +3,7 @@ import click
 import requests
 import json
 import yaml
+import signal
 import subprocess
 from watchdog.observers import Observer
 from watchdog.events import *
@@ -490,6 +491,13 @@ def minio(access_key, secret_key, server, secure, access_token, root_dir="."):
         )
         threads.append(thread)
         thread.start()
+
+    # Response to a killing signal.
+    def signal_handler(sig, frame):
+        for thread in threads:
+            thread.stop()
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     for thread in threads:
         thread.join()

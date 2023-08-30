@@ -35,8 +35,10 @@ setup(
         "console_scripts": [
             "pfetcher=paper_downloader.cli:cli",
             "pfetcher-monitor=paper_downloader.monitor:cli",
+            "pfetcher-syncer=paper_downloader.syncer:cli",
             "pdownloader=paper_downloader.cli:cli",
             "pdownloader-monitor=paper_downloader.monitor:cli",
+            "pdownloader-syncer=paper_downloader.syncer:cli",
         ],
     },
     install_requires=requirements + ["metapub @ git+https://github.com/yjcyxky/metapub.git@master"],
