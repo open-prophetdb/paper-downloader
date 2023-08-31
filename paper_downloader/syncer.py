@@ -146,7 +146,7 @@ def register_policy(bucket_name):
             "mc",
             "admin",
             "policy",
-            "create",
+            "add",
             MINIO_ALIAS,
             bucket_name,
             f"{f.name}",
@@ -172,11 +172,10 @@ def bind_policy_with_group(bucket_name):
         "mc",
         "admin",
         "policy",
-        "attach",
+        "set",
         MINIO_ALIAS,
         bucket_name,
-        "--group",
-        bucket_name,
+        f"group={bucket_name}"
     ]
 
     try:
@@ -354,7 +353,7 @@ def remove_policy(bucket_name):
         subprocess.check_output(command, universal_newlines=True)
         return True
     except subprocess.CalledProcessError as e:
-        logger.error("Something wrong with the group: %s" % e)
+        logger.error("Cannot remove the policy: %s" % e)
         return False
     
 
@@ -408,7 +407,6 @@ def get_users_in_group(bucket_name):
         users = json.loads(output).get("members", [])
         return users
     except subprocess.CalledProcessError as e:
-        logger.error("Something wrong with the group: %s" % e)
         return []
 
 def remove_group(bucket_name):
@@ -431,11 +429,11 @@ def remove_group(bucket_name):
     ]
 
     try:
-        # Run the command and parse JSON output
-        subprocess.check_output(command, universal_newlines=True)
+        # Run the command and parse JSON output, ignore stderr
+        subprocess.check_output(command, universal_newlines=True, stderr=subprocess.DEVNULL)
         return True
     except subprocess.CalledProcessError as e:
-        logger.error("Something wrong with the group: %s" % e)
+        logger.warning("Cannot remove the group: %s" % e)
         return False
     
 
@@ -448,7 +446,10 @@ def remove_special_characters(string):
     Returns:
         str: String without special characters
     """
-    return "".join([e if e.isalnum() else "_" for e in string])
+    string = "".join([e if e.isalnum() else "-" for e in string]).lower()
+    # Remove leading, trailing dashes and multiple dashes (maybe two or more words)
+    string = "-".join([e for e in string.split("-") if e != ""])
+    return string
 
 
 
@@ -479,11 +480,11 @@ def sync_account(ls_server, token):
         logger.info(f"Creating bucket {bucket_name}")
         make_bucket(bucket_name)
 
-        logger.info(f"Removing group {bucket_name}")
-        remove_group(bucket_name)
+        # logger.info(f"Removing group {bucket_name}")
+        # remove_group(bucket_name)
 
-        logger.info(f"Removing policy for bucket {bucket_name}")
-        remove_policy(bucket_name)
+        # logger.info(f"Removing policy for bucket {bucket_name}")
+        # remove_policy(bucket_name)
 
         successed_users = []
         for user in users:

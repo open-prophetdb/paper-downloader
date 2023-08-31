@@ -10,7 +10,7 @@ ENV LC_CTYPE en_US.UTF-8
 
 RUN apt-get update && apt-get install -y coreutils bash git wget make gettext python3 python3-pip python3-virtualenv curl
 
-RUN curl https://dl.min.io/client/mc/release/linux-amd64/mc \
+RUN curl https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2021-09-02T09-21-27Z \
          --create-dirs \
          -o /usr/local/bin/mc
 RUN chmod +x /usr/local/bin/mc

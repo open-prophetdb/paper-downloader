@@ -27,6 +27,9 @@ MINIO_SERVER=${MINIO_SERVER#*://}
 
 MINUTES_BETWEEN_RUNS=${MINUTES_BETWEEN_RUNS:-"1"}
 
+# Create a default bucket for avoiding errors
+mkdir -p /data/paper-downloader/default
+
 # Start the processes
 echo "Starting pfetcher-monitor"
 pfetcher-monitor minio -u ${MINIO_ACCESS_KEY} -p ${MINIO_SECRET_KEY} -d /data/paper-downloader/ -t ${DINGTALK_ACCESS_KEY} -s ${MINIO_SERVER} &
