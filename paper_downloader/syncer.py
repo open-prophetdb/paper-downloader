@@ -146,7 +146,7 @@ def register_policy(bucket_name):
             "mc",
             "admin",
             "policy",
-            "attach",
+            "create",
             MINIO_ALIAS,
             bucket_name,
             f"{f.name}",
@@ -172,10 +172,11 @@ def bind_policy_with_group(bucket_name):
         "mc",
         "admin",
         "policy",
-        "set",
+        "attach",
         MINIO_ALIAS,
         bucket_name,
-        f"group={bucket_name}",
+        "--group",
+        bucket_name,
     ]
 
     try:
@@ -471,7 +472,7 @@ def sync_account(ls_server, token):
     for organization in organizations:
         logger.info(f"Get all users from organization {organization['title']}")
         users = get_users_by_organization(ls_server, token, organization["id"])
-        bucket_name = organization["title"].lower().replace(" ", "-")
+        bucket_name = remove_special_characters(organization["title"])
 
         logger.info(f"Syncing organization {bucket_name}")
 
