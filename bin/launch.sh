@@ -25,12 +25,14 @@ DINGTALK_ACCESS_KEY=${DINGTALK_ACCESS_KEY:-""}
 LABEL_STUDIO_SERVER=${LABEL_STUDIO_SERVER#*://}
 MINIO_SERVER=${MINIO_SERVER#*://}
 
+MINUTES_BETWEEN_RUNS=${MINUTES_BETWEEN_RUNS:-"1"}
+
 # Start the processes
 echo "Starting pfetcher-monitor"
 pfetcher-monitor minio -u ${MINIO_ACCESS_KEY} -p ${MINIO_SECRET_KEY} -d /data/paper-downloader/ -t ${DINGTALK_ACCESS_KEY} -s ${MINIO_SERVER} &
 
 echo "Starting pfetcher-syncer"
-pfetcher-syncer --minutes 0.1 --ls-server http://${LABEL_STUDIO_SERVER} --token ${LABEL_STUDIO_TOKEN} --minio-server http://${MINIO_SERVER} --access-key ${MINIO_ACCESS_KEY} --secret-key ${MINIO_SECRET_KEY} &
+pfetcher-syncer --minutes ${MINUTES_BETWEEN_RUNS} --ls-server http://${LABEL_STUDIO_SERVER} --token ${LABEL_STUDIO_TOKEN} --minio-server http://${MINIO_SERVER} --access-key ${MINIO_ACCESS_KEY} --secret-key ${MINIO_SECRET_KEY} &
 
 # Wait for any process to exit
 wait -n
