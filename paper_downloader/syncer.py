@@ -146,7 +146,7 @@ def register_policy(bucket_name):
             "mc",
             "admin",
             "policy",
-            "add",
+            "attach",
             MINIO_ALIAS,
             bucket_name,
             f"{f.name}",
@@ -496,6 +496,7 @@ def sync_account(ls_server, token):
             # Check if user is already registered
             if exists_user(email, registered_users):
                 logger.info(f"User {email} already registered, if the user cannot login with the secret key, please remove the user from Minio and let the syncer re-register the user")
+                successed_users.append(email)
                 continue
             else:
                 logger.info(f"Registering user {email}")
