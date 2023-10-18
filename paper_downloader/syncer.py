@@ -187,7 +187,7 @@ def bind_policy_with_group(bucket_name):
         return False
         
 
-def make_bucket(bucket_name):
+def make_bucket(bucket_name, directories=["log", "config", "pdf", "html", "metadata"]):
     """Make a bucket in Minio
 
     Args:
@@ -204,7 +204,23 @@ def make_bucket(bucket_name):
     try:
         # Run the command and parse JSON output
         subprocess.check_output(command, universal_newlines=True)
-        return True
+
+        if len(directories) > 0:
+            # Construct the command to make directories
+            command = [
+                "mc",
+                "mb",
+                "-p",
+                *[f"{MINIO_ALIAS}/{bucket_name}/{directory}" for directory in directories],
+            ]
+
+            try:
+                # Run the command and parse JSON output
+                subprocess.check_output(command, universal_newlines=True)
+                return True
+            except subprocess.CalledProcessError as e:
+                logger.error("Something wrong with the group: %s" % e)
+                return False
     except subprocess.CalledProcessError as e:
         logger.error("Something wrong with the group: %s" % e)
         return False
