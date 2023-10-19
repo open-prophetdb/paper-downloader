@@ -206,17 +206,21 @@ def make_bucket(bucket_name, directories=["log", "config", "pdf", "html", "metad
         subprocess.check_output(command, universal_newlines=True)
 
         if len(directories) > 0:
-            # Create an empty file
-            command = [
-                "mc",
-                "cp",
-                "/dev/null",
-                *[f"{MINIO_ALIAS}/{bucket_name}/{directory}/.gitkeep" for directory in directories],
-            ]
-
             try:
-                # Run the command and parse JSON output
-                subprocess.check_output(command, universal_newlines=True)
+                # Create an empty file
+                subprocess.check_output(["touch", "/tmp/.gitkeep"], universal_newlines=True)
+                files = [f"{MINIO_ALIAS}/{bucket_name}/{directory}/.gitkeep" for directory in directories]
+                
+                for file in files:
+                    command = [
+                        "mc",
+                        "cp",
+                        "/tmp/.gitkeep",
+                        file,
+                    ]
+                    
+                    # Run the command and parse JSON output
+                    subprocess.check_output(command, universal_newlines=True)
 
                 return True
             except subprocess.CalledProcessError as e:
