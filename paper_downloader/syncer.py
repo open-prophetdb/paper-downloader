@@ -206,17 +206,18 @@ def make_bucket(bucket_name, directories=["log", "config", "pdf", "html", "metad
         subprocess.check_output(command, universal_newlines=True)
 
         if len(directories) > 0:
-            # Construct the command to make directories
+            # Create an empty file
             command = [
                 "mc",
-                "mb",
-                "-p",
-                *[f"{MINIO_ALIAS}/{bucket_name}/{directory}" for directory in directories],
+                "cp",
+                "/dev/null",
+                *[f"{MINIO_ALIAS}/{bucket_name}/{directory}/.gitkeep" for directory in directories],
             ]
 
             try:
                 # Run the command and parse JSON output
                 subprocess.check_output(command, universal_newlines=True)
+
                 return True
             except subprocess.CalledProcessError as e:
                 logger.error("Something wrong with the group: %s" % e)
